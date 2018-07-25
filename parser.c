@@ -237,6 +237,7 @@ expr(Parser *p, int min_priority)
             return STOP_TOK_COMMA;
 
         case LEX_KIND_SEMICOLON:
+            AFTER_EXPR();
             p->expr_end = false;
             return STOP_TOK_SEMICOLON;
 
