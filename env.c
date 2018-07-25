@@ -1,4 +1,5 @@
 #include "env.h"
+#include "ht.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -10,68 +11,20 @@
 
 #define GCC_IS_RETARDED volatile
 
-typedef struct {
-    char *name;
-    size_t nname;
-    Value value;
-} Var;
-
 struct Env {
-    LS_VECTOR_OF(Var) vars;
+    Ht *ht;
     jmp_buf err_handler;
     char *err;
 };
 
 Env *
-env_new(void)
+env_new(Ht *ht)
 {
     Env *e = LS_XNEW(Env, 1);
     *e = (Env) {
-        .vars = LS_VECTOR_NEW(),
+        .ht = ht,
     };
     return e;
-}
-
-static inline
-Var *
-find_var(Env *e, const char *name, size_t nname)
-{
-    for (size_t i = 0; i < e->vars.size; ++i) {
-        if (e->vars.data[i].nname == nname &&
-            name &&
-            memcmp(e->vars.data[i].name, name, nname) == 0)
-        {
-            return &e->vars.data[i];
-        }
-    }
-    return NULL;
-}
-
-void
-env_put(Env *e, const char *name, size_t nname, Value value)
-{
-    Var *v = find_var(e, name, nname);
-    if (v) {
-        value_unref(v->value);
-        v->value = value;
-    } else {
-        LS_VECTOR_PUSH(e->vars, ((Var) {
-            .name = ls_xmemdup(name, nname),
-            .nname = nname,
-            .value = value,
-        }));
-    }
-}
-
-bool
-env_get(Env *e, const char *name, size_t nname, Value *result)
-{
-    Var *v = find_var(e, name, nname);
-    if (v) {
-        *result = v->value;
-        return true;
-    }
-    return false;
 }
 
 int
@@ -108,19 +61,21 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
         case CMD_PUSH_VAR:
             {
                 Value value;
-                if (!env_get(e, in.args.varname.start, in.args.varname.size, &value)) {
+                if (!ht_get(e->ht, in.args.varname.start, in.args.varname.size, &value)) {
                     ERR("undefined variable '%.*s'",
                         (int) in.args.varname.size, in.args.varname.start);
                 }
-                value_ref(value);
                 LS_VECTOR_PUSH(stack, value);
             }
             break;
 
         case CMD_ASSIGN:
-            env_put(e, in.args.varname.start, in.args.varname.size,
-                    stack.data[stack.size - 1]);
-            --stack.size;
+            {
+                Value value = stack.data[stack.size - 1];
+                ht_put(e->ht, in.args.varname.start, in.args.varname.size, value);
+                --stack.size;
+                value_unref(value);
+            }
             break;
 
         case CMD_OP_UNARY:
@@ -244,8 +199,5 @@ env_free_last_error(Env *e)
 void
 env_destroy(Env *e)
 {
-    for (size_t i = 0; i < e->vars.size; ++i) {
-        free(e->vars.data[i].name);
-    }
-    LS_VECTOR_FREE(e->vars);
+    free(e);
 }

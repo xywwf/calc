@@ -278,13 +278,13 @@ main()
     reg_op(&ops, "^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
     reg_op(&ops, "!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
 
-    Env *env = env_new();
-    env_put(env, NAME("sin"), CFUNC(X_sin));
-    env_put(env, NAME("sum"), CFUNC(X_sum));
-    env_put(env, NAME("pi"), SCALAR(acos(-1)));
-
     Lexer *lex = lexer_new(ops.trie);
     Parser *parser = parser_new(lex);
+    Ht *ht = ht_new(2);
+    ht_put(ht, NAME("sin"), CFUNC(X_sin));
+    ht_put(ht, NAME("sum"), CFUNC(X_sum));
+    ht_put(ht, NAME("pi"), SCALAR(acos(-1)));
+    Env *env = env_new(ht);
 
     char *expr = NULL;
     size_t expr_alloc = 0;
@@ -292,7 +292,7 @@ main()
         ssize_t nexpr = getline(&expr, &expr_alloc, stdin);
         if (nexpr < 0) {
             if (feof(stdin)) {
-                return EXIT_SUCCESS;
+                goto cleanup;
             } else {
                 perror("getline");
                 return EXIT_FAILURE;
@@ -343,4 +343,15 @@ main()
             }
         }
     }
+
+cleanup:
+    free(expr);
+    trie_destroy(ops.trie);
+    LS_VECTOR_FREE(ops.ops);
+    LS_VECTOR_FREE(ops.ambops);
+    lexer_destroy(lex);
+    parser_destroy(parser);
+    ht_destroy(ht);
+    env_destroy(env);
+    return EXIT_SUCCESS;
 }

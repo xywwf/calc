@@ -1,9 +1,9 @@
 #include "trie.h"
 
-typedef uint_least32_t TriePtr;
+typedef uint_least32_t UIndex;
 
 typedef struct {
-    TriePtr children[128];
+    UIndex children[128];
     LexemKind kind;
     void *data;
 } TrieNode;
@@ -43,13 +43,13 @@ trie_insert(Trie *t, const char *key, LexemKind kind, void *data)
     if (!key[0]) {
         LS_PANIC("empty key");
     }
-    TriePtr p = 0;
+    UIndex p = 0;
     for (size_t i = 0; key[i]; ++i) {
         unsigned char c = key[i];
         if (c >= 128) {
             LS_PANIC("invalid character in key");
         }
-        TriePtr q = t->nodes[p].children[c];
+        UIndex q = t->nodes[p].children[c];
         if (!q) {
             q = add_node(t);
             t->nodes[p].children[c] = q;
@@ -64,7 +64,7 @@ LexemKind
 trie_greedy_lookup(Trie *t, const char *buf, size_t nbuf, void **data, size_t *len)
 {
     LexemKind kind = LEX_KIND_ERROR;
-    TriePtr p = 0;
+    UIndex p = 0;
     // Warning for copy-pasters: the case of empty string-key is not handled here.
     for (size_t i = 0; i < nbuf; ++i) {
         const unsigned char c = buf[i];
@@ -88,7 +88,7 @@ trie_greedy_lookup(Trie *t, const char *buf, size_t nbuf, void **data, size_t *l
 LexemKind
 trie_fixed_lookup(Trie *t, const char *key, size_t nkey, void **data)
 {
-    TriePtr p = 0;
+    UIndex p = 0;
     for (size_t i = 0; i < nkey; ++i) {
         const unsigned char c = key[i];
         if (c >= 128) {
