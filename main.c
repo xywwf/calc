@@ -2,6 +2,8 @@
 #include <math.h>
 #include <string.h>
 
+#include "libls/vector.h"
+
 #include "common.h"
 #include "op.h"
 #include "trie.h"
@@ -226,39 +228,62 @@ print_value(Value v)
     }
 }
 
+typedef struct {
+    Trie *trie;
+    LS_VECTOR_OF(Op) ops;
+    LS_VECTOR_OF(AmbigOp) ambops;
+} OpStore;
+
+static inline
+Op *
+add_op(OpStore *s, Op op)
+{
+    LS_VECTOR_PUSH(s->ops, op);
+    return &s->ops.data[s->ops.size - 1];
+}
+
+static inline
+void
+reg_op(OpStore *s, const char *sym, Op op)
+{
+    trie_insert(s->trie, sym, LEX_KIND_OP, add_op(s, op));
+}
+
+static inline
+void
+reg_ambig_op(OpStore *s, const char *sym, AmbigOp ambop)
+{
+    LS_VECTOR_PUSH(s->ambops, ambop);
+    trie_insert(s->trie, sym, LEX_KIND_AMBIG_OP, &s->ambops.data[s->ambops.size - 1]);
+}
+
 int
 main()
 {
-    Trie *ops = trie_new(128);
-    Op uminus = {.arity = 1, .assoc = OP_ASSOC_RIGHT, .priority = 100, .exec = {.unary = X_uminus}};
-    Op bminus = {.arity = 2, .assoc = OP_ASSOC_LEFT, .priority = 1, .exec = {.binary = X_bminus}};
-
-    AmbigOp minus = {.prefix = &uminus, .infix = &bminus};
-    trie_insert(ops, "-", LEX_KIND_AMBIG_OP, &minus);
-
-    Op plus = {.arity = 2, .assoc = OP_ASSOC_LEFT, .priority = 1, .exec = {.binary = X_plus}};
-    trie_insert(ops, "+", LEX_KIND_OP, &plus);
-
-    Op mul = {.arity = 2, .assoc = OP_ASSOC_LEFT, .priority = 2, .exec = {.binary = X_mul}};
-    trie_insert(ops, "*", LEX_KIND_OP, &mul);
-
-    Op div = {.arity = 2, .assoc = OP_ASSOC_LEFT, .priority = 2, .exec = {.binary = X_div}};
-    trie_insert(ops, "/", LEX_KIND_OP, &div);
-
-    Op pow = {.arity = 2, .assoc = OP_ASSOC_RIGHT, .priority = 3, .exec = {.binary = X_pow}};
-    trie_insert(ops, "^", LEX_KIND_OP, &pow);
-
-    Op fact = {.arity = 1, .assoc = OP_ASSOC_LEFT, .priority = 4, .exec = {.unary = X_fact}};
-    trie_insert(ops, "!", LEX_KIND_OP, &fact);
+    OpStore ops = {
+        .trie = trie_new(128),
+        .ops = LS_VECTOR_NEW(),
+        .ambops = LS_VECTOR_NEW(),
+    };
+#define UNARY(Exec_, ...) (Op) {.arity = 1, .exec = {.unary = Exec_}, __VA_ARGS__}
+#define BINARY(Exec_, ...) (Op) {.arity = 2, .exec = {.binary = Exec_}, __VA_ARGS__}
+#define NAME(S_) S_, strlen(S_)
+    reg_ambig_op(&ops, "-", (AmbigOp) {
+        .prefix = add_op(&ops, UNARY(X_uminus, .assoc = OP_ASSOC_RIGHT, .priority = 100)),
+        .infix = add_op(&ops, BINARY(X_bminus, .assoc = OP_ASSOC_LEFT, .priority = 1)),
+    });
+    reg_op(&ops, "+", BINARY(X_plus, .assoc = OP_ASSOC_LEFT, .priority = 1));
+    reg_op(&ops, "*", BINARY(X_mul, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    reg_op(&ops, "/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    reg_op(&ops, "^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
+    reg_op(&ops, "!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
 
     Env *env = env_new();
-#define PAIR(S_) S_, strlen(S_)
-    env_put(env, PAIR("sin"), CFUNC(X_sin));
-    env_put(env, PAIR("sum"), CFUNC(X_sum));
-    env_put(env, PAIR("pi"), SCALAR(acos(-1)));
-#undef PAIR
+    env_put(env, NAME("sin"), CFUNC(X_sin));
+    env_put(env, NAME("sum"), CFUNC(X_sum));
+    env_put(env, NAME("pi"), SCALAR(acos(-1)));
 
-    Lexer *lex = lexer_new(ops);
+    Lexer *lex = lexer_new(ops.trie);
     Parser *parser = parser_new(lex);
 
     char *expr = NULL;
