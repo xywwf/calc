@@ -47,7 +47,7 @@ trie_insert(Trie *t, const char *key, LexemKind kind, void *data)
     for (size_t i = 0; key[i]; ++i) {
         unsigned char c = key[i];
         if (c >= 128) {
-            LS_PANIC("invalid character in key");
+            LS_PANIC("non-ASCII character in key");
         }
         UIndex q = t->nodes[p].children[c];
         if (!q) {

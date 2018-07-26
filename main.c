@@ -280,7 +280,7 @@ main()
 
     Lexer *lex = lexer_new(ops.trie);
     Parser *parser = parser_new(lex);
-    Ht *ht = ht_new(2);
+    Ht *ht = ht_new(6);
     ht_put(ht, NAME("sin"), CFUNC(X_sin));
     ht_put(ht, NAME("sum"), CFUNC(X_sum));
     ht_put(ht, NAME("pi"), SCALAR(acos(-1)));

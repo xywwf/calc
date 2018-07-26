@@ -112,7 +112,7 @@ ht_put(Ht *h, const char *key, size_t nkey, Value value)
             return;
         } else {
             Entry e = entries[index];
-            if (e.nkey == nkey && memcmp(keys + e.key_idx, key, nkey) == 0) {
+            if (e.nkey == nkey && nkey && memcmp(keys + e.key_idx, key, nkey) == 0) {
                 // Old value is going to get replaced.
                 value_unref(e.value);
                 entries[index].value = value;
@@ -140,7 +140,7 @@ ht_get(Ht *h, const char *key, size_t nkey, Value *result)
             return false;
         } else {
             Entry e = entries[index];
-            if (e.nkey == nkey && memcmp(keys + e.key_idx, key, nkey) == 0) {
+            if (e.nkey == nkey && nkey && memcmp(keys + e.key_idx, key, nkey) == 0) {
                 // New copy is made
                 value_ref(e.value);
                 *result = e.value;

@@ -9,6 +9,7 @@
 #include "libls/vector.h"
 #include "libls/sprintf_utils.h"
 
+// TODO do something with it.
 #define GCC_IS_RETARDED volatile
 
 struct Env {
