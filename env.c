@@ -9,8 +9,11 @@
 #include "libls/vector.h"
 #include "libls/sprintf_utils.h"
 
-// TODO do something with it.
-#define GCC_IS_RETARDED volatile
+#if defined(__GNUC_PATCHLEVEL__) && !defined(__clang_patchlevel__)
+#   define USE_RETARDED_PRAGMAS 1
+#else
+#   define USE_RETARDED_PRAGMAS 0
+#endif
 
 struct Env {
     Ht *ht;
@@ -28,6 +31,10 @@ env_new(Ht *ht)
     return e;
 }
 
+#if USE_RETARDED_PRAGMAS
+#   pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wclobbered"
+#endif
 int
 env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
 {
@@ -49,7 +56,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
         } \
     } while (0)
 
-    for (GCC_IS_RETARDED size_t i = 0; i < nchunk; ++i) {
+    for (size_t i = 0; i < nchunk; ++i) {
         Instr in = chunk[i];
         switch (in.cmd) {
         case CMD_PUSH_SCALAR:
@@ -111,7 +118,16 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
         case CMD_CALL:
             {
                 Value *ptr = stack.data + stack.size - in.args.nargs - 1;
-                GCC_IS_RETARDED Value func = ptr[0];
+
+#if USE_RETARDED_PRAGMAS
+#   pragma GCC diagnostic push
+#   pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+                Value func = ptr[0];
+#if USE_RETARDED_PRAGMAS
+#   pragma GCC diagnostic pop
+#endif
+
                 if (func.kind != VAL_KIND_CFUNC) {
                     ERR("cannot call %s value", value_kindname(func.kind));
                 }
@@ -149,6 +165,10 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
                 }));
             }
             break;
+#if LS_HAS_BUILTIN_UNREACHABLE
+        default:
+            __builtin_unreachable();
+#endif
         }
     }
 
@@ -174,6 +194,9 @@ done:
 #undef ERR
 #undef PROTECT
 }
+#if USE_RETARDED_PRAGMAS
+#   pragma GCC diagnostic pop
+#endif
 
 void
 env_throw(Env *e, const char *fmt, ...)
