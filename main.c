@@ -254,7 +254,7 @@ int
 main()
 {
     Trie *ops = trie_new(128);
-#define DUP_OBJ(T_, ...) ls_xmemdup((T_[1]){__VA_ARGS__}, sizeof(T_))
+#define DUP_OBJ(T_, ...) ls_xmemdup((T_[1]) {__VA_ARGS__}, sizeof(T_))
 #define REG_OP(Sym_, ...) \
     trie_insert(ops, Sym_, LEX_KIND_OP, DUP_OBJ(Op, __VA_ARGS__))
 #define REG_AMBIG_OP(Sym_, ...) \
