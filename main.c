@@ -228,59 +228,54 @@ print_value(Value v)
     }
 }
 
-typedef struct {
-    Trie *trie;
-    LS_VECTOR_OF(Op) ops;
-    LS_VECTOR_OF(AmbigOp) ambops;
-} OpStore;
-
-static inline
-Op *
-add_op(OpStore *s, Op op)
-{
-    LS_VECTOR_PUSH(s->ops, op);
-    return &s->ops.data[s->ops.size - 1];
-}
-
-static inline
+static
 void
-reg_op(OpStore *s, const char *sym, Op op)
+destroy_op(void *userdata, LexemKind kind, void *data)
 {
-    trie_insert(s->trie, sym, LEX_KIND_OP, add_op(s, op));
-}
-
-static inline
-void
-reg_ambig_op(OpStore *s, const char *sym, AmbigOp ambop)
-{
-    LS_VECTOR_PUSH(s->ambops, ambop);
-    trie_insert(s->trie, sym, LEX_KIND_AMBIG_OP, &s->ambops.data[s->ambops.size - 1]);
+    (void) userdata;
+    switch (kind) {
+    case LEX_KIND_OP:
+        free(data);
+        break;
+    case LEX_KIND_AMBIG_OP:
+        {
+            AmbigOp *amb = data;
+            free(amb->prefix);
+            free(amb->infix);
+            free(amb);
+        }
+        break;
+    default:
+        break;
+    }
 }
 
 int
 main()
 {
-    OpStore ops = {
-        .trie = trie_new(128),
-        .ops = LS_VECTOR_NEW(),
-        .ambops = LS_VECTOR_NEW(),
-    };
-#define UNARY(Exec_, ...) (Op) {.arity = 1, .exec = {.unary = Exec_}, __VA_ARGS__}
-#define BINARY(Exec_, ...) (Op) {.arity = 2, .exec = {.binary = Exec_}, __VA_ARGS__}
-#define NAME(S_) S_, strlen(S_)
-    reg_ambig_op(&ops, "-", (AmbigOp) {
-        .prefix = add_op(&ops, UNARY(X_uminus, .assoc = OP_ASSOC_RIGHT, .priority = 100)),
-        .infix = add_op(&ops, BINARY(X_bminus, .assoc = OP_ASSOC_LEFT, .priority = 1)),
-    });
-    reg_op(&ops, "+", BINARY(X_plus, .assoc = OP_ASSOC_LEFT, .priority = 1));
-    reg_op(&ops, "*", BINARY(X_mul, .assoc = OP_ASSOC_LEFT, .priority = 2));
-    reg_op(&ops, "/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
-    reg_op(&ops, "^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
-    reg_op(&ops, "!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
+    Trie *ops = trie_new(128);
+#define DUP_OBJ(T_, ...) ls_xmemdup((T_[1]){__VA_ARGS__}, sizeof(T_))
+#define REG_OP(Sym_, ...) \
+    trie_insert(ops, Sym_, LEX_KIND_OP, DUP_OBJ(Op, __VA_ARGS__))
+#define REG_AMBIG_OP(Sym_, ...) \
+    trie_insert(ops, Sym_, LEX_KIND_AMBIG_OP, DUP_OBJ(AmbigOp, __VA_ARGS__))
+#define UNARY(Exec_, ...) {.arity = 1, .exec = {.unary = Exec_}, __VA_ARGS__}
+#define BINARY(Exec_, ...) {.arity = 2, .exec = {.binary = Exec_}, __VA_ARGS__}
 
-    Lexer *lex = lexer_new(ops.trie);
+    REG_AMBIG_OP("-", {
+        .prefix = DUP_OBJ(Op, UNARY(X_uminus, .assoc = OP_ASSOC_RIGHT, .priority = 100)),
+        .infix = DUP_OBJ(Op, BINARY(X_bminus,  .assoc = OP_ASSOC_LEFT, .priority = 1)),
+    });
+    REG_OP("+", BINARY(X_plus, .assoc = OP_ASSOC_LEFT, .priority = 1));
+    REG_OP("*", BINARY(X_mul, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    REG_OP("/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    REG_OP("^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
+    REG_OP("!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
+
+    Lexer *lex = lexer_new(ops);
     Parser *parser = parser_new(lex);
     Ht *ht = ht_new(6);
+#define NAME(S_) S_, strlen(S_)
     ht_put(ht, NAME("sin"), CFUNC(X_sin));
     ht_put(ht, NAME("sum"), CFUNC(X_sum));
     ht_put(ht, NAME("pi"), SCALAR(acos(-1)));
@@ -346,9 +341,8 @@ main()
 
 cleanup:
     free(expr);
-    trie_destroy(ops.trie);
-    LS_VECTOR_FREE(ops.ops);
-    LS_VECTOR_FREE(ops.ambops);
+    trie_traverse(ops, destroy_op, NULL);
+    trie_destroy(ops);
     lexer_destroy(lex);
     parser_destroy(parser);
     ht_destroy(ht);

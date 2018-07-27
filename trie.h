@@ -19,6 +19,9 @@ LexemKind
 trie_fixed_lookup(Trie *t, const char *key, size_t nkey, void **data);
 
 void
+trie_traverse(Trie *t, void (*on_elem)(void *userdata, LexemKind kind, void *data), void *userdata);
+
+void
 trie_destroy(Trie *t);
 
 #endif
