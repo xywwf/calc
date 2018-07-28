@@ -2,7 +2,7 @@ SOURCES := $(wildcard *.c libls/*.c)
 OBJECTS := $(patsubst %.c,%.o,$(SOURCES))
 PROGRAM := main
 
-CFLAGS := -std=c99 -pedantic -Wcast-align -Wall -Wextra -O2
+CFLAGS := -std=c99 -pedantic -Wall -Wextra -O2
 CPPFLAGS := -D_POSIX_C_SOURCE=200809L
 LDLIBS := -lm
 
