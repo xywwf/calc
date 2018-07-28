@@ -110,7 +110,10 @@ void
 trie_traverse(Trie *t, void (*on_elem)(void *userdata, LexemKind kind, void *data), void *userdata)
 {
     for (size_t i = 0; i < t->size; ++i) {
-        on_elem(userdata, t->nodes[i].kind, t->nodes[i].data);
+        TrieNode node = t->nodes[i];
+        if (node.kind != LEX_KIND_ERROR) {
+            on_elem(userdata, node.kind, node.data);
+        }
     }
 }
 
