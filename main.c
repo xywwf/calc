@@ -205,15 +205,15 @@ Value
 X_mat(Env *e, const Value *args, unsigned nargs)
 {
     if (nargs != 2) {
-        env_throw(e, "wtf");
+        env_throw(e, "'Mat' expects exactly two arguments");
     }
     if (args[0].kind != VAL_KIND_SCALAR || args[1].kind != VAL_KIND_SCALAR) {
-        env_throw(e, "wtf");
+        env_throw(e, "both arguments to 'Mat' must be scalars");
     }
     const unsigned height = args[0].as.scalar;
     const unsigned width = args[1].as.scalar;
     if ((height == 0) != (width == 0)) {
-        env_throw(e, "wtf");
+        env_throw(e, "invalid matrix dimensions");
     }
     return MAT(matrix_new(height, width));
 }
