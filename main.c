@@ -202,65 +202,20 @@ X_sum(Env *e, const Value *args, unsigned nargs)
 
 static
 Value
-X_at(Env *e, Value mat, Value index)
+X_mat(Env *e, const Value *args, unsigned nargs)
 {
-    if (mat.kind != VAL_KIND_MATRIX) {
-        env_throw(e, "cannot index a %s value", value_kindname(mat.kind));
+    if (nargs != 2) {
+        env_throw(e, "wtf");
     }
-    Matrix *m = ASMAT(mat);
-    if (index.kind == VAL_KIND_SCALAR) {
-        const size_t row_num = index.as.scalar;
-        if (row_num < 1 || row_num > m->height) {
-            env_throw(e, "row index out of range");
-        }
-        const size_t width = m->width;
-        Matrix *row = matrix_new(1, width);
-        memcpy(row->elems, m->elems + width * (row_num - 1), sizeof(Scalar) * width);
-        return MAT(row);
-    } else if (index.kind == VAL_KIND_MATRIX) {
-        Matrix *ij = ASMAT(index);
-        if (ij->height != 1 || ij->width != 2) {
-            env_throw(e, "invalid size of index matrix (expected 1x2)");
-        }
-        const size_t i = ij->elems[0];
-        const size_t j = ij->elems[1];
-        if (i < 1 || i > m->height) {
-            env_throw(e, "row index out of range");
-        }
-        if (j < 1 || j > m->width) {
-            env_throw(e, "column index out of range");
-        }
-        return SCALAR(m->elems[(i - 1) * m->width + (j - 1)]);
-    } else {
-        env_throw(e, "cannot use %s value as an index", value_kindname(index.kind));
+    if (args[0].kind != VAL_KIND_SCALAR || args[1].kind != VAL_KIND_SCALAR) {
+        env_throw(e, "wtf");
     }
-}
-
-static
-Value
-X_vec_at(Env *e, Value vec, Value index)
-{
-    if (vec.kind != VAL_KIND_MATRIX) {
-        env_throw(e, "cannot index a %s value", value_kindname(vec.kind));
+    const unsigned height = args[0].as.scalar;
+    const unsigned width = args[1].as.scalar;
+    if ((height == 0) != (width == 0)) {
+        env_throw(e, "wtf");
     }
-    if (index.kind != VAL_KIND_SCALAR) {
-        env_throw(e, "cannot index vector with %s value", value_kindname(index.kind));
-    }
-    Matrix *v = ASMAT(vec);
-    const size_t i = index.as.scalar;
-    if (v->height == 1) {
-        if (i < 1 || i > v->width) {
-            env_throw(e, "index out of range");
-        }
-        return SCALAR(v->elems[i - 1]);
-    } else if (v->width == 1) {
-        if (i < 1 || i > v->height) {
-            env_throw(e, "index out of range");
-        }
-        return SCALAR(v->elems[i - 1]);
-    } else {
-        env_throw(e, "matrix to be vector-indexed is neither 1xN nor Nx1.");
-    }
+    return MAT(matrix_new(height, width));
 }
 
 static
@@ -278,7 +233,7 @@ print_value(Value v)
             puts(" [");
             for (unsigned i = 0; i < m->height; ++i) {
                 for (unsigned j = 0; j < m->width; ++j) {
-                    printf(" \t%.15g", m->elems[elem_idx++]);
+                    printf("\t%.15g", m->elems[elem_idx++]);
                 }
                 puts("");
             }
@@ -334,8 +289,10 @@ main()
     REG_OP("/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
     REG_OP("^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
     REG_OP("!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
-    REG_OP("@", BINARY(X_at, .assoc = OP_ASSOC_LEFT, .priority = 10));
-    REG_OP("'", BINARY(X_vec_at, .assoc = OP_ASSOC_LEFT, .priority = 10));
+    // inv, rank, det, kernel, image, LU, T[ranspose], tr[ace], solve,
+    // eigenvalues, eigenvectors, eigenspaces, def (=> -1, -0.5, 0, 0.5, 1),
+    // conjT
+    // Mat(n, m)
 
     Lexer *lex = lexer_new(ops);
     Parser *parser = parser_new(lex);
@@ -343,6 +300,7 @@ main()
 #define NAME(S_) S_, strlen(S_)
     ht_put(ht, NAME("sin"), CFUNC(X_sin));
     ht_put(ht, NAME("sum"), CFUNC(X_sum));
+    ht_put(ht, NAME("Mat"), CFUNC(X_mat));
     ht_put(ht, NAME("pi"), SCALAR(acos(-1)));
     Env *env = env_new(ht);
 

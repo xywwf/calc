@@ -10,6 +10,8 @@ typedef enum {
     CMD_PUSH_SCALAR,
     CMD_PUSH_VAR,
     CMD_ASSIGN,
+    CMD_GET_AT,
+    CMD_SET_AT,
     CMD_OP_UNARY,
     CMD_OP_BINARY,
     CMD_CALL,
@@ -27,6 +29,9 @@ typedef struct {
             const char *start;
             size_t size;
         } varname;
+
+        // CMD_GET_AT, CMD_SET_AT
+        unsigned nindices;
 
         // CMD_OP_UNARY
         Value (*unary)(struct Env *e, Value arg);

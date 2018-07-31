@@ -42,9 +42,6 @@ typedef enum {
     STOP_TOK_EOF,
 } StopTokenKind;
 
-#define INSTR(P_, Cmd_, ...) \
-    LS_VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}}))
-
 static
 void
 throw_at(Parser *p, Lexem pos, const char *msg)
@@ -52,6 +49,24 @@ throw_at(Parser *p, Lexem pos, const char *msg)
     p->err = (ParserError) {.has_pos = true, .pos = pos, .msg = msg};
     longjmp(p->err_handler, 1);
 }
+
+#define INSTR(P_, Cmd_, ...) \
+    LS_VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}}))
+
+#define AFTER_EXPR(P_, M_) \
+    do { \
+        if (!(P_)->expr_end) { \
+            throw_at(P_, M_, "expected expression"); \
+        } \
+    } while (0)
+
+#define THIS_IS_EXPR(P_, M_) \
+    do { \
+        if ((P_)->expr_end) { \
+            throw_at(P_, M_, "expected operator or end of expression"); \
+        } \
+    } while (0)
+
 
 // forward declaration
 static inline
@@ -80,22 +95,38 @@ row(Parser *p, unsigned *width)
 }
 
 static inline
+void
+on_ident(Parser *p, Lexem m)
+{
+    THIS_IS_EXPR(p, m);
+    INSTR(p, CMD_PUSH_VAR, .varname = {.start = m.start, .size = m.size});
+    p->expr_end = true;
+}
+
+static inline
+unsigned
+on_indexing(Parser *p)
+{
+    unsigned nindices = 1;
+    p->expr_end = false;
+    while (1) {
+        switch (expr(p, -1)) {
+        case STOP_TOK_COMMA:
+            ++nindices;
+            break;
+        case STOP_TOK_RBRACKET:
+            return nindices;
+        default:
+            lexer_rollback(p->lex);
+            throw_at(p, lexer_next(p->lex), "expected either ',' or ']'");
+        }
+    }
+}
+
+static inline
 StopTokenKind
 expr(Parser *p, int min_priority)
 {
-#define AFTER_EXPR() \
-    do { \
-        if (!p->expr_end) { \
-            throw_at(p, m, "expected expression"); \
-        } \
-    } while (0)
-#define THIS_IS_EXPR() \
-    do { \
-        if (p->expr_end) { \
-            throw_at(p, m, "expected operator or end of expression"); \
-        } \
-    } while (0)
-
     while (1) {
         lexer_mark(p->lex);
         Lexem m = lexer_next(p->lex);
@@ -103,7 +134,7 @@ expr(Parser *p, int min_priority)
 
         case LEX_KIND_NUM:
             {
-                THIS_IS_EXPR();
+                THIS_IS_EXPR(p, m);
                 Scalar scalar;
                 if (!scalar_parse(m.start, m.size, &scalar)) {
                     throw_at(p, m, "invalid number");
@@ -114,9 +145,7 @@ expr(Parser *p, int min_priority)
             break;
 
         case LEX_KIND_IDENT:
-            THIS_IS_EXPR();
-            INSTR(p, CMD_PUSH_VAR, .varname = {.start = m.start, .size = m.size});
-            p->expr_end = true;
+            on_ident(p, m);
             break;
 
         case LEX_KIND_AMBIG_OP:
@@ -137,10 +166,10 @@ expr(Parser *p, int min_priority)
 
                 if (op->arity == 1) {
                     if (op->assoc == OP_ASSOC_LEFT) {
-                        AFTER_EXPR();
+                        AFTER_EXPR(p, m);
                         INSTR(p, CMD_OP_UNARY, .unary = op->exec.unary);
                     } else {
-                        THIS_IS_EXPR();
+                        THIS_IS_EXPR(p, m);
                         StopTokenKind s = expr(p, op->priority);
                         INSTR(p, CMD_OP_UNARY, .unary = op->exec.unary);
                         if (s != STOP_TOK_OP) {
@@ -148,7 +177,7 @@ expr(Parser *p, int min_priority)
                         }
                     }
                 } else {
-                    AFTER_EXPR();
+                    AFTER_EXPR(p, m);
                     p->expr_end = false;
                     StopTokenKind s = expr(p, op->priority + (op->assoc == OP_ASSOC_LEFT));
                     INSTR(p, CMD_OP_BINARY, .binary = op->exec.binary);
@@ -193,8 +222,12 @@ expr(Parser *p, int min_priority)
             break;
 
         case LEX_KIND_LBRACKET:
-            {
-                THIS_IS_EXPR();
+            if (p->expr_end) {
+                // indexing
+                unsigned nindices = on_indexing(p);
+                INSTR(p, CMD_GET_AT, .nindices = nindices);
+            } else {
+                // matrix
                 unsigned width;
                 unsigned height;
 
@@ -220,24 +253,24 @@ expr(Parser *p, int min_priority)
             break;
 
         case LEX_KIND_EOF:
-            AFTER_EXPR();
+            AFTER_EXPR(p, m);
             return STOP_TOK_EOF;
 
         case LEX_KIND_RBRACE:
-            AFTER_EXPR();
+            AFTER_EXPR(p, m);
             return STOP_TOK_RBRACE;
 
         case LEX_KIND_RBRACKET:
-            AFTER_EXPR();
+            AFTER_EXPR(p, m);
             return STOP_TOK_RBRACKET;
 
         case LEX_KIND_COMMA:
-            AFTER_EXPR();
+            AFTER_EXPR(p, m);
             p->expr_end = false;
             return STOP_TOK_COMMA;
 
         case LEX_KIND_SEMICOLON:
-            AFTER_EXPR();
+            AFTER_EXPR(p, m);
             p->expr_end = false;
             return STOP_TOK_SEMICOLON;
 
@@ -250,8 +283,6 @@ expr(Parser *p, int min_priority)
             break;
         }
     }
-#undef AFTER_EXPR
-#undef THIS_IS_EXPR
 }
 
 bool
@@ -261,14 +292,41 @@ parser_parse_expr(Parser *p)
         return false;
     }
 
-    bool assign = false;
+    bool has_postponed = false;
+    Instr postponed;
 
     lexer_mark(p->lex);
-    Lexem m = lexer_next(p->lex);
-    if (m.kind == LEX_KIND_IDENT) {
-        assign = lexer_next(p->lex).kind == LEX_KIND_EQ;
-    }
-    if (!assign) {
+    Lexem m1 = lexer_next(p->lex);
+    if (m1.kind == LEX_KIND_IDENT) {
+        lexer_mark(p->lex);
+        Lexem m2 = lexer_next(p->lex);
+        if (m2.kind == LEX_KIND_EQ) {
+            has_postponed = true;
+            postponed = (Instr) {
+                .cmd = CMD_ASSIGN,
+                .args = {.varname = {.start = m1.start, .size = m1.size}},
+            };
+        } else if (m2.kind == LEX_KIND_LBRACKET) {
+            on_ident(p, m1);
+            unsigned nindices = on_indexing(p);
+            lexer_mark(p->lex);
+            Lexem m3 = lexer_next(p->lex);
+            if (m3.kind == LEX_KIND_EQ) {
+                has_postponed = true;
+                postponed = (Instr) {
+                    .cmd = CMD_SET_AT,
+                    .args = {.nindices = nindices},
+                };
+                p->expr_end = false;
+            } else {
+                INSTR(p, CMD_GET_AT, .nindices = nindices);
+                lexer_rollback(p->lex);
+            }
+        } else {
+            on_ident(p, m1);
+            lexer_rollback(p->lex);
+        }
+    } else {
         lexer_rollback(p->lex);
     }
 
@@ -282,8 +340,8 @@ parser_parse_expr(Parser *p)
         return false;
     }
 
-    if (assign) {
-        INSTR(p, CMD_ASSIGN, .varname = {.start = m.start, .size = m.size});
+    if (has_postponed) {
+        LS_VECTOR_PUSH(p->chunk, postponed);
     }
     return true;
 }
