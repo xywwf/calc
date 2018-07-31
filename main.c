@@ -292,7 +292,6 @@ main()
     // inv, rank, det, kernel, image, LU, T[ranspose], tr[ace], solve,
     // eigenvalues, eigenvectors, eigenspaces, def (=> -1, -0.5, 0, 0.5, 1),
     // conjT
-    // Mat(n, m)
 
     Lexer *lex = lexer_new(ops);
     Parser *parser = parser_new(lex);

@@ -107,12 +107,10 @@ static inline
 unsigned
 on_indexing(Parser *p)
 {
-    unsigned nindices = 1;
     p->expr_end = false;
-    while (1) {
+    for (unsigned nindices = 1; ; ++nindices) {
         switch (expr(p, -1)) {
         case STOP_TOK_COMMA:
-            ++nindices;
             break;
         case STOP_TOK_RBRACKET:
             return nindices;
