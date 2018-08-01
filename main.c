@@ -243,16 +243,38 @@ Value
 X_Dim(Env *e, const Value *args, unsigned nargs)
 {
     if (nargs != 1) {
-        env_throw(e, "wtf");
+        env_throw(e, "'Dim' expects exactly one argument");
     }
     if (args[0].kind != VAL_KIND_MATRIX) {
-        env_throw(e, "wtf");
+        env_throw(e, "'Dim' can only be applied to a matrix");
     }
     Matrix *m = ASMAT(args[0]);
     Matrix *d = matrix_new(1, 2);
     d->elems[0] = m->height;
     d->elems[1] = m->width;
     return MAT(d);
+}
+
+static
+Value
+X_Transpose(Env *e, const Value *args, unsigned nargs)
+{
+    if (nargs != 1) {
+        env_throw(e, "'T' expects exactly one argument");
+    }
+    if (args[0].kind != VAL_KIND_MATRIX) {
+        env_throw(e, "'T' can only be applied to a matrix");
+    }
+    Matrix *x = ASMAT(args[0]);
+    const unsigned height = x->height;
+    const unsigned width = x->width;
+    Matrix *y = matrix_new(width, height);
+    for (unsigned i = 0; i < width; ++i) {
+        for (unsigned j = 0; j < height; ++j) {
+            y->elems[i * height + j] = x->elems[j * width + i];
+        }
+    }
+    return MAT(y);
 }
 
 static
@@ -346,7 +368,7 @@ main()
     ht_put(ht, NAME("sum"), CFUNC(X_sum));
     ht_put(ht, NAME("Mat"), CFUNC(X_Mat));
     ht_put(ht, NAME("Dim"), CFUNC(X_Dim));
-    //ht_put(ht, NAME("T"),   CFUNC(X_Transpose));
+    ht_put(ht, NAME("T"),   CFUNC(X_Transpose));
 
     ht_put(ht, NAME("pi"), SCALAR(acos(-1)));
 
