@@ -146,6 +146,17 @@ X_div(Env *e, Value a, Value b)
 
 static
 Value
+X_mod(Env *e, Value a, Value b)
+{
+    if (a.kind != VAL_KIND_SCALAR || b.kind != VAL_KIND_SCALAR) {
+        env_throw(e, "cannot calculate remainder of %s divided by %s",
+                  value_kindname(a.kind), value_kindname(b.kind));
+    }
+    return SCALAR(fmod(a.as.scalar, b.as.scalar));
+}
+
+static
+Value
 X_pow(Env *e, Value a, Value b)
 {
     if (a.kind != VAL_KIND_SCALAR || b.kind != VAL_KIND_SCALAR) {
@@ -173,18 +184,27 @@ X_fact(Env *e, Value a)
     return SCALAR(r);
 }
 
-static
-Value
-X_sin(Env *e, const Value *args, unsigned nargs)
-{
-    if (nargs != 1) {
-        env_throw(e, "wrong number of args to 'sin'");
+#define DECL1(Name_) \
+    static \
+    Value \
+    X_ ## Name_(Env *e, const Value *args, unsigned nargs) \
+    { \
+        if (nargs != 1) { \
+            env_throw(e, "'%s' expects exactly one argument", #Name_); \
+        } \
+        if (args[0].kind != VAL_KIND_SCALAR) { \
+            env_throw(e, "'%s' can only be applied to a scalar", #Name_); \
+        } \
+        return SCALAR(Name_(args[0].as.scalar)); \
     }
-    if (args[0].kind != VAL_KIND_SCALAR) {
-        env_throw(e, "'sin' can only be applied to a scalar");
-    }
-    return SCALAR(sin(args[0].as.scalar));
-}
+
+DECL1(sin)
+DECL1(cos)
+DECL1(atan)
+DECL1(exp)
+DECL1(log)
+DECL1(floor)
+DECL1(ceil)
 
 static
 Value
@@ -202,7 +222,7 @@ X_sum(Env *e, const Value *args, unsigned nargs)
 
 static
 Value
-X_mat(Env *e, const Value *args, unsigned nargs)
+X_Mat(Env *e, const Value *args, unsigned nargs)
 {
     if (nargs != 2) {
         env_throw(e, "'Mat' expects exactly two arguments");
@@ -216,6 +236,23 @@ X_mat(Env *e, const Value *args, unsigned nargs)
         env_throw(e, "invalid matrix dimensions");
     }
     return MAT(matrix_new(height, width));
+}
+
+static
+Value
+X_Dim(Env *e, const Value *args, unsigned nargs)
+{
+    if (nargs != 1) {
+        env_throw(e, "wtf");
+    }
+    if (args[0].kind != VAL_KIND_MATRIX) {
+        env_throw(e, "wtf");
+    }
+    Matrix *m = ASMAT(args[0]);
+    Matrix *d = matrix_new(1, 2);
+    d->elems[0] = m->height;
+    d->elems[1] = m->width;
+    return MAT(d);
 }
 
 static
@@ -282,11 +319,12 @@ main()
 
     REG_AMBIG_OP("-", {
         .prefix = DUP_OBJ(Op, UNARY(X_uminus, .assoc = OP_ASSOC_RIGHT, .priority = 100)),
-        .infix = DUP_OBJ(Op, BINARY(X_bminus,  .assoc = OP_ASSOC_LEFT, .priority = 1)),
+        .infix = DUP_OBJ(Op, BINARY(X_bminus, .assoc = OP_ASSOC_LEFT, .priority = 1)),
     });
     REG_OP("+", BINARY(X_plus, .assoc = OP_ASSOC_LEFT, .priority = 1));
     REG_OP("*", BINARY(X_mul, .assoc = OP_ASSOC_LEFT, .priority = 2));
     REG_OP("/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    REG_OP("%", BINARY(X_mod, .assoc = OP_ASSOC_LEFT, .priority = 2));
     REG_OP("^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
     REG_OP("!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
     // inv, rank, det, kernel, image, LU, T[ranspose], tr[ace], solve,
@@ -297,10 +335,21 @@ main()
     Parser *parser = parser_new(lex);
     Ht *ht = ht_new(6);
 #define NAME(S_) S_, strlen(S_)
-    ht_put(ht, NAME("sin"), CFUNC(X_sin));
+    ht_put(ht, NAME("sin"),   CFUNC(X_sin));
+    ht_put(ht, NAME("cos"),   CFUNC(X_cos));
+    ht_put(ht, NAME("atan"),  CFUNC(X_atan));
+    ht_put(ht, NAME("ln"),    CFUNC(X_log));
+    ht_put(ht, NAME("exp"),   CFUNC(X_exp));
+    ht_put(ht, NAME("floor"), CFUNC(X_floor));
+    ht_put(ht, NAME("ceil"),  CFUNC(X_ceil));
+
     ht_put(ht, NAME("sum"), CFUNC(X_sum));
-    ht_put(ht, NAME("Mat"), CFUNC(X_mat));
+    ht_put(ht, NAME("Mat"), CFUNC(X_Mat));
+    ht_put(ht, NAME("Dim"), CFUNC(X_Dim));
+    //ht_put(ht, NAME("T"),   CFUNC(X_Transpose));
+
     ht_put(ht, NAME("pi"), SCALAR(acos(-1)));
+
     Env *env = env_new(ht);
 
     char *expr = NULL;

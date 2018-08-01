@@ -283,6 +283,49 @@ expr(Parser *p, int min_priority)
     }
 }
 
+static
+bool
+detect_assignment(Parser *p, Instr *assign)
+{
+    lexer_mark(p->lex);
+    Lexem m1 = lexer_next(p->lex);
+    if (m1.kind != LEX_KIND_IDENT) {
+        lexer_rollback(p->lex);
+        return false;
+    }
+
+    lexer_mark(p->lex);
+    Lexem m2 = lexer_next(p->lex);
+    if (m2.kind == LEX_KIND_EQ) {
+        *assign = (Instr) {
+            .cmd = CMD_ASSIGN,
+            .args = {.varname = {.start = m1.start, .size = m1.size}},
+        };
+        return true;
+    } else if (m2.kind != LEX_KIND_LBRACKET) {
+        on_ident(p, m1);
+        lexer_rollback(p->lex);
+        return false;
+    }
+
+    on_ident(p, m1);
+    const unsigned nindices = on_indexing(p);
+    lexer_mark(p->lex);
+    Lexem m3 = lexer_next(p->lex);
+    if (m3.kind == LEX_KIND_EQ) {
+        p->expr_end = false;
+        *assign = (Instr) {
+            .cmd = CMD_SET_AT,
+            .args = {.nindices = nindices},
+        };
+        return true;
+    }
+
+    INSTR(p, CMD_GET_AT, .nindices = nindices);
+    lexer_rollback(p->lex);
+    return false;
+}
+
 bool
 parser_parse_expr(Parser *p)
 {
@@ -290,43 +333,8 @@ parser_parse_expr(Parser *p)
         return false;
     }
 
-    bool has_postponed = false;
-    Instr postponed;
-
-    lexer_mark(p->lex);
-    Lexem m1 = lexer_next(p->lex);
-    if (m1.kind == LEX_KIND_IDENT) {
-        lexer_mark(p->lex);
-        Lexem m2 = lexer_next(p->lex);
-        if (m2.kind == LEX_KIND_EQ) {
-            has_postponed = true;
-            postponed = (Instr) {
-                .cmd = CMD_ASSIGN,
-                .args = {.varname = {.start = m1.start, .size = m1.size}},
-            };
-        } else if (m2.kind == LEX_KIND_LBRACKET) {
-            on_ident(p, m1);
-            unsigned nindices = on_indexing(p);
-            lexer_mark(p->lex);
-            Lexem m3 = lexer_next(p->lex);
-            if (m3.kind == LEX_KIND_EQ) {
-                has_postponed = true;
-                postponed = (Instr) {
-                    .cmd = CMD_SET_AT,
-                    .args = {.nindices = nindices},
-                };
-                p->expr_end = false;
-            } else {
-                INSTR(p, CMD_GET_AT, .nindices = nindices);
-                lexer_rollback(p->lex);
-            }
-        } else {
-            on_ident(p, m1);
-            lexer_rollback(p->lex);
-        }
-    } else {
-        lexer_rollback(p->lex);
-    }
+    Instr assign;
+    bool has_assign = detect_assignment(p, &assign);
 
     if (expr(p, -1) != STOP_TOK_EOF) {
         lexer_rollback(p->lex);
@@ -338,8 +346,8 @@ parser_parse_expr(Parser *p)
         return false;
     }
 
-    if (has_postponed) {
-        LS_VECTOR_PUSH(p->chunk, postponed);
+    if (has_assign) {
+        LS_VECTOR_PUSH(p->chunk, assign);
     }
     return true;
 }
