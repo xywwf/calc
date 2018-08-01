@@ -267,10 +267,10 @@ Value
 X_Transpose(Env *e, const Value *args, unsigned nargs)
 {
     if (nargs != 1) {
-        env_throw(e, "'T' expects exactly one argument");
+        env_throw(e, "'Trans' expects exactly one argument");
     }
     if (args[0].kind != VAL_KIND_MATRIX) {
-        env_throw(e, "'T' can only be applied to a matrix");
+        env_throw(e, "'Trans' can only be applied to a matrix");
     }
     Matrix *x = ASMAT(args[0]);
     const unsigned height = x->height;
