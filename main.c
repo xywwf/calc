@@ -17,15 +17,6 @@
 #define CFUNC(X_) ((Value) {.kind = VAL_KIND_CFUNC, .as = {.cfunc = X_}})
 #define MAT(X_) ((Value) {.kind = VAL_KIND_MATRIX, .as = {.gcobj = (GcObject *) X_}})
 
-#define M1(MVar_, DimRef_, IVar_, ...) \
-    Matrix *MVar_ = matrix_new((DimRef_)->height, (DimRef_)->width); \
-    do { \
-        const size_t n__ = MVar_->height * MVar_->width; \
-        for (size_t IVar_ = 0; IVar_ < n__; ++IVar_) { \
-            MVar_->elems[IVar_] = (__VA_ARGS__); \
-        } \
-    } while (0)
-
 static inline
 bool
 eqdim(Matrix *x, Matrix *y)
@@ -43,7 +34,11 @@ X_uminus(Env *e, Value a)
     case VAL_KIND_MATRIX:
         {
             Matrix *x = ASMAT(a);
-            M1(y, x, i, -x->elems[i]);
+            Matrix *y = matrix_new(x->height, x->width);
+            const size_t n = (size_t) x->height * x->width;
+            for (size_t i = 0; i < n; ++i) {
+                y->elems[i] = -x->elems[i];
+            }
             return MAT(y);
         }
     default:
@@ -61,7 +56,11 @@ X_bminus(Env *e, Value a, Value b)
         if (!eqdim(x, y)) {
             env_throw(e, "matrices unconformable for subtraction");
         }
-        M1(z, x, i, x->elems[i] - y->elems[i]);
+        Matrix *z = matrix_new(x->height, x->width);
+        const size_t n = (size_t) x->height * x->width;
+        for (size_t i = 0; i < n; ++i) {
+            z->elems[i] = x->elems[i] - y->elems[i];
+        }
         return MAT(z);
     } else if (a.kind == VAL_KIND_SCALAR && b.kind == VAL_KIND_SCALAR) {
         return SCALAR(a.as.scalar - b.as.scalar);
@@ -80,7 +79,11 @@ X_plus(Env *e, Value a, Value b)
         if (!eqdim(x, y)) {
             env_throw(e, "matrices unconformable for addition");
         }
-        M1(z, x, i, x->elems[i] + y->elems[i]);
+        Matrix *z = matrix_new(x->height, x->width);
+        const size_t n = (size_t) x->height * x->width;
+        for (size_t i = 0; i < n; ++i) {
+            z->elems[i] = x->elems[i] + y->elems[i];
+        }
         return MAT(z);
     } else if (a.kind == VAL_KIND_SCALAR && b.kind == VAL_KIND_SCALAR) {
         return SCALAR(a.as.scalar + b.as.scalar);
@@ -94,8 +97,12 @@ Value
 sbym(Value s, Value m)
 {
     Matrix *x = ASMAT(m);
-    Scalar a = s.as.scalar;
-    M1(y, x, i, a * x->elems[i]);
+    const Scalar a = s.as.scalar;
+    Matrix *y = matrix_new(x->height, x->width);
+    const size_t n = (size_t) x->height * x->width;
+    for (size_t i = 0; i < n; ++i) {
+        y->elems[i] = a * x->elems[i];
+    }
     return MAT(y);
 }
 
@@ -349,9 +356,8 @@ main()
     REG_OP("%", BINARY(X_mod, .assoc = OP_ASSOC_LEFT, .priority = 2));
     REG_OP("^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
     REG_OP("!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
-    // inv, rank, det, kernel, image, LU, T[ranspose], tr[ace], solve,
-    // eigenvalues, eigenvectors, eigenspaces, def (=> -1, -0.5, 0, 0.5, 1),
-    // conjT
+    // inv, rank, det, kernel, image, LU, tr[ace], solve
+    // eigenvalues, eigenvectors, eigenspaces, def (=> -1, -0.5, 0, 0.5, 1), conjT
 
     Lexer *lex = lexer_new(ops);
     Parser *parser = parser_new(lex);
@@ -365,10 +371,10 @@ main()
     ht_put(ht, NAME("floor"), CFUNC(X_floor));
     ht_put(ht, NAME("ceil"),  CFUNC(X_ceil));
 
-    ht_put(ht, NAME("sum"), CFUNC(X_sum));
-    ht_put(ht, NAME("Mat"), CFUNC(X_Mat));
-    ht_put(ht, NAME("Dim"), CFUNC(X_Dim));
-    ht_put(ht, NAME("T"),   CFUNC(X_Transpose));
+    ht_put(ht, NAME("sum"),   CFUNC(X_sum));
+    ht_put(ht, NAME("Mat"),   CFUNC(X_Mat));
+    ht_put(ht, NAME("Dim"),   CFUNC(X_Dim));
+    ht_put(ht, NAME("Trans"), CFUNC(X_Transpose));
 
     ht_put(ht, NAME("pi"), SCALAR(acos(-1)));
 
