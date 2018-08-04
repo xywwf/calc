@@ -56,7 +56,9 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
         } \
     } while (0)
 
-    for (size_t i = 0; i < nchunk; ++i) {
+    (void) nchunk;
+    size_t i = 0;
+    while (1) {
         Instr in = chunk[i];
         switch (in.cmd) {
         case CMD_PRINT:
@@ -234,24 +236,26 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             break;
 
         case CMD_JUMP:
-            i = in.args.pos - 1;
-            break;
+            i = in.args.pos;
+            continue;
 
         case CMD_JUMP_UNLESS:
             {
                 Value condition = stack.data[stack.size - 1];
                 if (!value_is_truthy(condition)) {
-                    i = in.args.pos - 1;
+                    i = in.args.pos;
                 }
 
                 --stack.size;
                 value_unref(condition);
             }
-            break;
+            continue;
 
         case CMD_HALT:
             goto done;
         }
+
+        ++i;
     }
 
 done:
