@@ -632,8 +632,21 @@ main(int argc, char **argv)
             }
         } else {
             ParserError err = parser_last_error(parser);
-            // TODO output line.
-            fprintf(stderr, "%s\n", err.msg);
+            if (err.has_pos) {
+                const char *pos = err.pos.start;
+                size_t line = 1, column = 1;
+                for (char *ptr = code; ptr != pos; ++ptr) {
+                    if (*ptr == '\n') {
+                        ++line;
+                        column = 1;
+                    } else {
+                        ++column;
+                    }
+                }
+                fprintf(stderr, "%zu:%zu: %s\n", line, column, err.msg);
+            } else {
+                fprintf(stderr, "%s\n", err.msg);
+            }
         }
         free(code);
     }
