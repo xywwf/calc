@@ -4,7 +4,7 @@ PROGRAM := main
 
 CFLAGS := -std=c99 -pedantic -Wall -Wextra -O2
 CPPFLAGS := -D_POSIX_C_SOURCE=200809L
-LDLIBS := -lm
+LDLIBS := -lm -lreadline
 
 all: $(PROGRAM)
 

@@ -1,6 +1,60 @@
 #include "value.h"
 #include "env.h"
 
+#include <stdio.h>
+
+void
+value_print(Value v)
+{
+    switch (v.kind) {
+    case VAL_KIND_SCALAR:
+        printf("%.15g\n", v.as.scalar);
+        break;
+    case VAL_KIND_MATRIX:
+        {
+            Matrix *m = (Matrix *) v.as.gcobj;
+            size_t elem_idx = 0;
+            puts("[");
+            for (unsigned i = 0; i < m->height; ++i) {
+                for (unsigned j = 0; j < m->width; ++j) {
+                    printf("\t%.15g", m->elems[elem_idx++]);
+                }
+                puts("");
+            }
+            puts("]");
+        }
+        break;
+    case VAL_KIND_CFUNC:
+        printf("<built-in function>\n");
+        break;
+    }
+}
+
+bool
+value_is_truthy(Value v)
+{
+    switch (v.kind) {
+    case VAL_KIND_SCALAR:
+        return !!v.as.scalar;
+    case VAL_KIND_MATRIX:
+        {
+            Matrix *m = (Matrix *) v.as.gcobj;
+            const size_t nelems = (size_t) m->height * m->width;
+            for (size_t i = 0; i < nelems; ++i) {
+                if (m->elems[i]) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        break;
+    case VAL_KIND_CFUNC:
+        return true;
+    default:
+        LS_UNREACHABLE();
+    }
+}
+
 bool
 scalar_parse(const char *buf, size_t nbuf, Scalar *result)
 {
@@ -108,7 +162,7 @@ void
 matrix_set2(Env *e, Matrix *m, Value row, Value col, Value v)
 {
     if (row.kind != VAL_KIND_SCALAR || col.kind != VAL_KIND_SCALAR) {
-        env_throw(e, "cannot index matrix with (%s, %s) values",
+        env_throw(e, "cannot index matrix with (%s, %s) pair",
                   value_kindname(row.kind), value_kindname(col.kind));
     }
     const size_t i = row.as.scalar;

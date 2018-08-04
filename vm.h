@@ -7,15 +7,19 @@
 struct Env;
 
 typedef enum {
+    CMD_PRINT,
     CMD_PUSH_SCALAR,
-    CMD_PUSH_VAR,
-    CMD_ASSIGN,
-    CMD_GET_AT,
-    CMD_SET_AT,
+    CMD_LOAD,
+    CMD_STORE,
+    CMD_LOAD_AT,
+    CMD_STORE_AT,
     CMD_OP_UNARY,
     CMD_OP_BINARY,
     CMD_CALL,
     CMD_MATRIX,
+    CMD_JUMP,
+    CMD_JUMP_UNLESS,
+    CMD_HALT,
 } Command;
 
 typedef struct {
@@ -24,13 +28,13 @@ typedef struct {
         // CMD_PUSH_SCALAR
         Scalar scalar;
 
-        // CMD_PUSH_VAR, CMD_ASSIGN
+        // CMD_LOAD, CMD_STORE
         struct {
             const char *start;
             size_t size;
         } varname;
 
-        // CMD_GET_AT, CMD_SET_AT
+        // CMD_LOAD_AT, CMD_STORE_AT
         unsigned nindices;
 
         // CMD_OP_UNARY
@@ -47,6 +51,9 @@ typedef struct {
             unsigned height;
             unsigned width;
         } dims;
+
+        // CMD_JUMP, CMD_JUMP_UNLESS
+        size_t pos;
     } args;
 } Instr;
 

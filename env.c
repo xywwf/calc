@@ -35,8 +35,8 @@ env_new(Ht *ht)
 #   pragma GCC diagnostic push
 #   pragma GCC diagnostic ignored "-Wclobbered"
 #endif
-int
-env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
+bool
+env_eval(Env *e, const Instr *chunk, size_t nchunk)
 {
     bool ok = true;
     LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
@@ -59,16 +59,24 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
     for (size_t i = 0; i < nchunk; ++i) {
         Instr in = chunk[i];
         switch (in.cmd) {
+        case CMD_PRINT:
+            {
+                Value v = stack.data[stack.size - 1];
+                value_print(v);
+
+                value_unref(v);
+                --stack.size;
+            }
+            break;
+
         case CMD_PUSH_SCALAR:
-            DEBUG("\tCMD_PUSH_SCALAR\t%.15g\n", in.args.scalar);
             LS_VECTOR_PUSH(stack, ((Value) {
                 .kind = VAL_KIND_SCALAR,
                 .as.scalar = in.args.scalar,
             }));
             break;
 
-        case CMD_PUSH_VAR:
-            DEBUG("\tCMD_PUSH_VAR\t%.*s\n", (int) in.args.varname.size, in.args.varname.start);
+        case CMD_LOAD:
             {
                 Value value;
                 if (!ht_get(e->ht, in.args.varname.start, in.args.varname.size, &value)) {
@@ -79,8 +87,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
             }
             break;
 
-        case CMD_ASSIGN:
-            DEBUG("\tCMD_ASSIGN\t%.*s\n", (int) in.args.varname.size, in.args.varname.start);
+        case CMD_STORE:
             {
                 Value value = stack.data[stack.size - 1];
                 ht_put(e->ht, in.args.varname.start, in.args.varname.size, value);
@@ -89,8 +96,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
             }
             break;
 
-        case CMD_GET_AT:
-            DEBUG("\tCMD_GET_AT\t%u\n", in.args.nindices);
+        case CMD_LOAD_AT:
             {
                 const unsigned nindices = in.args.nindices;
                 Value *ptr = stack.data + stack.size - nindices - 1;
@@ -118,8 +124,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
             }
             break;
 
-        case CMD_SET_AT:
-            DEBUG("\tCMD_SET_AT\t%u\n", in.args.nindices);
+        case CMD_STORE_AT:
             {
                 const unsigned nindices = in.args.nindices;
                 Value *ptr = stack.data + stack.size - nindices - 2;
@@ -149,7 +154,6 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
             break;
 
         case CMD_OP_UNARY:
-            DEBUG("\tCMD_OP_UNARY\t<...>\n");
             {
                 Value v = stack.data[stack.size - 1];
 
@@ -163,7 +167,6 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
             break;
 
         case CMD_OP_BINARY:
-            DEBUG("\tCMD_OP_BINARY\t<...>\n");
             {
                 Value v = stack.data[stack.size - 2];
                 Value w = stack.data[stack.size - 1];
@@ -180,7 +183,6 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
             break;
 
         case CMD_CALL:
-            DEBUG("\tCMD_CALL\t%u\n", in.args.nargs);
             {
                 Value *ptr = stack.data + stack.size - in.args.nargs - 1;
 
@@ -211,7 +213,6 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
             break;
 
         case CMD_MATRIX:
-            DEBUG("\tCMD_MATRIX\t%u %u\n", in.args.dims.height, in.args.dims.width);
             {
                 const size_t nelems = in.args.dims.height * in.args.dims.width;
 
@@ -231,32 +232,34 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result)
                 }));
             }
             break;
-#if LS_HAS_BUILTIN_UNREACHABLE
-        default:
-            __builtin_unreachable();
-#endif
+
+        case CMD_JUMP:
+            i = in.args.pos - 1;
+            break;
+
+        case CMD_JUMP_UNLESS:
+            {
+                Value condition = stack.data[stack.size - 1];
+                if (!value_is_truthy(condition)) {
+                    i = in.args.pos - 1;
+                }
+
+                --stack.size;
+                value_unref(condition);
+            }
+            break;
+
+        case CMD_HALT:
+            goto done;
         }
     }
 
 done:
-    (void) 0;
-    int ret;
-    if (ok) {
-        if (stack.size) {
-            assert(stack.size == 1);
-            *result = stack.data[0];
-            ret = 1;
-        } else {
-            ret = 0;
-        }
-    } else {
-        for (size_t i = 0; i < stack.size; ++i) {
-            value_unref(stack.data[i]);
-        }
-        ret = -1;
+    for (size_t i = 0; i < stack.size; ++i) {
+        value_unref(stack.data[i]);
     }
     LS_VECTOR_FREE(stack);
-    return ret;
+    return ok;
 #undef ERR
 #undef PROTECT
 }

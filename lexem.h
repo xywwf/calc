@@ -18,6 +18,15 @@ typedef enum {
     LEX_KIND_COMMA,
     LEX_KIND_SEMICOLON,
     LEX_KIND_EQ,
+    LEX_KIND_IF,
+    LEX_KIND_THEN,
+    LEX_KIND_ELIF,
+    LEX_KIND_ELSE,
+    LEX_KIND_WHILE,
+    LEX_KIND_DO,
+    LEX_KIND_BREAK,
+    LEX_KIND_NEXT,
+    LEX_KIND_END,
 } LexemKind;
 
 typedef struct {

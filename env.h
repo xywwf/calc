@@ -12,8 +12,8 @@ typedef struct Env Env;
 Env *
 env_new(Ht *ht);
 
-int
-env_eval(Env *e, const Instr *chunk, size_t nchunk, Value *result);
+bool
+env_eval(Env *e, const Instr *chunk, size_t nchunk);
 
 const char *
 env_last_error(Env *e);

@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
-
-#include "libls/vector.h"
+#include <unistd.h>
+#include <fcntl.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 #include "common.h"
 #include "op.h"
@@ -10,6 +12,7 @@
 #include "lexer.h"
 #include "parser.h"
 #include "env.h"
+#include "disasm.h"
 
 #define ASMAT(V_) ((Matrix *) (V_).as.gcobj)
 
@@ -162,6 +165,100 @@ X_mod(Env *e, Value a, Value b)
     return SCALAR(fmod(a.as.scalar, b.as.scalar));
 }
 
+#define DECLCOMP(Op_, Name_) \
+    static \
+    Value \
+    X_ ## Name_(Env *e, Value a, Value b) \
+    { \
+        if (a.kind != VAL_KIND_SCALAR || b.kind != VAL_KIND_SCALAR) { \
+            env_throw(e, "cannot compare %s and %s", \
+                      value_kindname(a.kind), value_kindname(b.kind)); \
+        } \
+        return SCALAR(a.as.scalar Op_ b.as.scalar); \
+    }
+DECLCOMP(<,  lt)
+DECLCOMP(<=, le)
+DECLCOMP(>,  gt)
+DECLCOMP(>=, ge)
+
+static
+Value
+X_eq(Env *e, Value a, Value b)
+{
+    (void) e;
+    if (a.kind != b.kind) {
+        return SCALAR(0);
+    }
+    switch (a.kind) {
+    case VAL_KIND_SCALAR:
+        return SCALAR(a.as.scalar == b.as.scalar);
+    case VAL_KIND_MATRIX:
+        {
+            Matrix *x = ASMAT(a);
+            Matrix *y = ASMAT(b);
+            if (!eqdim(x, y)) {
+                return SCALAR(0);
+            }
+            const size_t nelems = (size_t) x->height * x->width;
+            for (size_t i = 0; i < nelems; ++i) {
+                if (x->elems[i] != y->elems[i]) {
+                    return SCALAR(0);
+                }
+            }
+            return SCALAR(1);
+        }
+        break;
+    case VAL_KIND_CFUNC:
+        return SCALAR(a.as.cfunc == b.as.cfunc);
+    default:
+        LS_UNREACHABLE();
+    }
+}
+
+static
+Value
+X_ne(Env *e, Value a, Value b)
+{
+    (void) e;
+    if (a.kind != b.kind) {
+        return SCALAR(0);
+    }
+    switch (a.kind) {
+    case VAL_KIND_SCALAR:
+        return SCALAR(a.as.scalar != b.as.scalar);
+    case VAL_KIND_MATRIX:
+        {
+            Matrix *x = ASMAT(a);
+            Matrix *y = ASMAT(b);
+            if (!eqdim(x, y)) {
+                return SCALAR(1);
+            }
+            const size_t nelems = (size_t) x->height * x->width;
+            for (size_t i = 0; i < nelems; ++i) {
+                if (x->elems[i] != y->elems[i]) {
+                    return SCALAR(1);
+                }
+            }
+            return SCALAR(0);
+        }
+        break;
+    case VAL_KIND_CFUNC:
+        return SCALAR(a.as.cfunc != b.as.cfunc);
+    default:
+        LS_UNREACHABLE();
+    }
+}
+
+static
+Value
+X_not(Env *e, Value a)
+{
+    if (a.kind != VAL_KIND_SCALAR) {
+        env_throw(e, "cannot calculate boolean negation of a %s value", value_kindname(a.kind));
+    }
+    return SCALAR(!a.as.scalar);
+}
+
 static
 Value
 X_pow(Env *e, Value a, Value b)
@@ -171,24 +268,6 @@ X_pow(Env *e, Value a, Value b)
                   value_kindname(a.kind), value_kindname(b.kind));
     }
     return SCALAR(pow(a.as.scalar, b.as.scalar));
-}
-
-static
-Value
-X_fact(Env *e, Value a)
-{
-    if (a.kind != VAL_KIND_SCALAR) {
-        env_throw(e, "cannot calculate factorial of %s", value_kindname(a.kind));
-    }
-    const Scalar x = a.as.scalar;
-    if (x > 1000000) {
-        return SCALAR(1. / 0.);
-    }
-    Scalar r = 1;
-    for (Scalar i = 2; i <= x; ++i) {
-        r *= i;
-    }
-    return SCALAR(r);
 }
 
 #define DECL1(Name_) \
@@ -286,34 +365,6 @@ X_Transpose(Env *e, const Value *args, unsigned nargs)
 
 static
 void
-print_value(Value v)
-{
-    switch (v.kind) {
-    case VAL_KIND_SCALAR:
-        printf(" %.15g\n", v.as.scalar);
-        break;
-    case VAL_KIND_MATRIX:
-        {
-            Matrix *m = ASMAT(v);
-            size_t elem_idx = 0;
-            puts(" [");
-            for (unsigned i = 0; i < m->height; ++i) {
-                for (unsigned j = 0; j < m->width; ++j) {
-                    printf("\t%.15g", m->elems[elem_idx++]);
-                }
-                puts("");
-            }
-            puts(" ]");
-        }
-        break;
-    case VAL_KIND_CFUNC:
-        printf(" <built-in function>\n");
-        break;
-    }
-}
-
-static
-void
 destroy_op(void *userdata, LexemKind kind, void *data)
 {
     (void) userdata;
@@ -334,9 +385,80 @@ destroy_op(void *userdata, LexemKind kind, void *data)
     }
 }
 
-int
-main()
+static
+bool
+detect_tty(void)
 {
+    if (!isatty(0)) {
+        return false;
+    }
+    const char *term = getenv("TERM");
+    if (!term || strcmp(term, "") == 0 || strcmp(term, "dumb") == 0) {
+        return false;
+    }
+    return true;
+}
+
+static
+char *
+full_read(int fd, size_t *nbuf)
+{
+    char *buf = NULL;
+    size_t size = 0;
+    size_t capacity = 0;
+    while (1) {
+        if (size == capacity) {
+            buf = ls_x2realloc(buf, &capacity, 1);
+        }
+        const ssize_t r = read(fd, buf + size, capacity - size);
+        if (r < 0) {
+            return NULL;
+        } else if (r == 0) {
+            break;
+        }
+        size += r;
+    }
+    *nbuf = size;
+    return buf;
+}
+
+static
+void
+usage(void)
+{
+    fprintf(stderr, "USAGE: main [-i]\n"
+                    "       main -c CODE\n"
+                    "       main FILE\n"
+                    );
+    exit(2);
+}
+
+int
+main(int argc, char **argv)
+{
+    int ret = EXIT_FAILURE;
+    char *codearg = NULL;
+    bool iflag = false;
+    bool dflag = false;
+    for (int c; (c = getopt(argc, argv, "c:id")) != -1;) {
+        switch (c) {
+        case 'c':
+            codearg = optarg;
+            break;
+        case 'i':
+            iflag = true;
+            break;
+        case 'd':
+            dflag = true;
+            break;
+        case '?':
+            usage();
+            break;
+        default:
+            LS_UNREACHABLE();
+        }
+    }
+
     Trie *ops = trie_new(128);
 #define DUP_OBJ(T_, ...) ls_xmemdup((T_[1]) {__VA_ARGS__}, sizeof(T_))
 #define REG_OP(Sym_, ...) \
@@ -355,7 +477,28 @@ main()
     REG_OP("/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
     REG_OP("%", BINARY(X_mod, .assoc = OP_ASSOC_LEFT, .priority = 2));
     REG_OP("^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
-    REG_OP("!", UNARY(X_fact, .assoc = OP_ASSOC_LEFT, .priority = 4));
+
+    REG_OP("!", UNARY(X_not, .assoc = OP_ASSOC_RIGHT, .priority = 0));
+
+    REG_OP("<",  BINARY(X_lt, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    REG_OP("<=", BINARY(X_le, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    REG_OP("==", BINARY(X_eq, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    REG_OP("!=", BINARY(X_ne, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    REG_OP(">",  BINARY(X_gt, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    REG_OP(">=", BINARY(X_ge, .assoc = OP_ASSOC_LEFT, .priority = 0));
+
+    trie_insert(ops, "=", LEX_KIND_EQ, NULL);
+
+    trie_insert(ops, ":if",     LEX_KIND_IF,     NULL);
+    trie_insert(ops, ":then",   LEX_KIND_THEN,   NULL);
+    trie_insert(ops, ":elif",   LEX_KIND_ELIF,   NULL);
+    trie_insert(ops, ":else",   LEX_KIND_ELSE,   NULL);
+    trie_insert(ops, ":while",  LEX_KIND_WHILE,  NULL);
+    trie_insert(ops, ":do",     LEX_KIND_DO,     NULL);
+    trie_insert(ops, ":break",  LEX_KIND_BREAK,  NULL);
+    trie_insert(ops, ":next",   LEX_KIND_NEXT,   NULL);
+    trie_insert(ops, ":end",    LEX_KIND_END,    NULL);
+
     // inv, rank, det, kernel, image, LU, tr[ace], solve
     // eigenvalues, eigenvectors, eigenspaces, def (=> -1, -0.5, 0, 0.5, 1), conjT
 
@@ -380,71 +523,127 @@ main()
 
     Env *env = env_new(ht);
 
-    char *expr = NULL;
-    size_t expr_alloc = 0;
-    while (1) {
-        ssize_t nexpr = getline(&expr, &expr_alloc, stdin);
-        if (nexpr < 0) {
-            if (feof(stdin)) {
-                goto cleanup;
+    bool interactive = false;
+    char *code;
+    size_t ncode;
+    switch (argc - optind) {
+    case 0:
+        if (codearg) {
+            code = ls_xstrdup(codearg);
+            ncode = strlen(code);
+        } else {
+            if (iflag || detect_tty()) {
+                interactive = true;
             } else {
-                perror("getline");
-                return EXIT_FAILURE;
+                if (!(code = full_read(0, &ncode))) {
+                    perror("<stdin>");
+                    goto cleanup;
+                }
             }
         }
-
-        if (nexpr && expr[nexpr - 1] == '\n') {
-            --nexpr;
+        break;
+    case 1:
+        {
+            if (codearg || iflag) {
+                usage();
+            }
+            const int fd = open(argv[optind], O_RDONLY);
+            if (fd < 0) {
+                perror(argv[optind]);
+                goto cleanup;
+            }
+            if (!(code = full_read(fd, &ncode))) {
+                perror(argv[optind]);
+                goto cleanup;
+            }
+            close(fd);
         }
-        lexer_reset(lex, expr, nexpr);
+        break;
+    default:
+        usage();
+    }
+
+    if (interactive) {
+        while (1) {
+            char *expr = readline("≈≈> ");
+            if (!expr) {
+                fputc('\n', stderr);
+                ret = EXIT_SUCCESS;
+                goto cleanup;
+            }
+            add_history(expr);
+            const size_t nexpr = strlen(expr);
+
+            lexer_reset(lex, expr, nexpr);
+            parser_reset(parser);
+            if (parser_parse_expr(parser)) {
+                size_t nchunk;
+                const Instr *chunk = parser_last_chunk(parser, &nchunk);
+
+                if (dflag) {
+                    disasm_print(chunk, nchunk);
+                } else {
+                    if (!env_eval(env, chunk, nchunk)) {
+                        fprintf(stderr, "%s\n", env_last_error(env));
+                        env_free_last_error(env);
+                    }
+                }
+            } else {
+                ParserError err = parser_last_error(parser);
+                if (err.has_pos) {
+                    fprintf(stderr, "> %.*s\n", (int) nexpr, expr);
+                    size_t start_pos = err.pos.start - expr;
+                    size_t end_pos = start_pos + err.pos.size;
+                    if (end_pos == start_pos) {
+                        ++end_pos;
+                    }
+                    for (size_t i = 0; i < start_pos; ++i) {
+                        expr[i] = ' ';
+                    }
+                    expr[start_pos] = '^';
+                    for (size_t i = start_pos + 1; i < end_pos; ++i) {
+                        expr[i] = '~';
+                    }
+                    fprintf(stderr, "  %.*s %s\n", (int) end_pos, expr, err.msg);
+                } else {
+                    fprintf(stderr, "%s\n", err.msg);
+                }
+            }
+
+            free(expr);
+        }
+    } else {
+        lexer_reset(lex, code, ncode);
         parser_reset(parser);
         if (parser_parse_expr(parser)) {
             size_t nchunk;
             const Instr *chunk = parser_last_chunk(parser, &nchunk);
-            Value result;
-            switch (env_eval(env, chunk, nchunk, &result)) {
-            case -1:
-                fprintf(stderr, "%s\n", env_last_error(env));
-                env_free_last_error(env);
-                break;
-            case 0:
-                fprintf(stderr, "ok :)\n");
-                break;
-            case 1:
-                print_value(result);
-                value_unref(result);
-                break;
+            if (dflag) {
+                disasm_print(chunk, nchunk);
+                ret = EXIT_SUCCESS;
+            } else {
+                if (env_eval(env, chunk, nchunk)) {
+                    ret = EXIT_SUCCESS;
+                } else {
+                    // TODO output line?
+                    fprintf(stderr, "%s\n", env_last_error(env));
+                    env_free_last_error(env);
+                }
             }
         } else {
             ParserError err = parser_last_error(parser);
-            if (err.has_pos) {
-                fprintf(stderr, "> %.*s\n", (int) nexpr, expr);
-                size_t start_pos = err.pos.start - expr;
-                size_t end_pos = start_pos + err.pos.size;
-                if (end_pos == start_pos) {
-                    ++end_pos;
-                }
-                for (size_t i = 0; i < start_pos; ++i) {
-                    expr[i] = ' ';
-                }
-                expr[start_pos] = '^';
-                for (size_t i = start_pos + 1; i < end_pos; ++i) {
-                    expr[i] = '~';
-                }
-                fprintf(stderr, "  %.*s %s\n", (int) end_pos, expr, err.msg);
-            } else {
-                fprintf(stderr, "%s\n", err.msg);
-            }
+            // TODO output line.
+            fprintf(stderr, "%s\n", err.msg);
         }
+        free(code);
     }
 
 cleanup:
-    free(expr);
     trie_traverse(ops, destroy_op, NULL);
     trie_destroy(ops);
     lexer_destroy(lex);
     parser_destroy(parser);
     ht_destroy(ht);
     env_destroy(env);
-    return EXIT_SUCCESS;
+    return ret;
 }

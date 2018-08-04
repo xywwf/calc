@@ -77,6 +77,12 @@ value_unref(Value v)
     }
 }
 
+void
+value_print(Value v);
+
+bool
+value_is_truthy(Value v);
+
 bool
 scalar_parse(const char *buf, size_t nbuf, Scalar *result);
 

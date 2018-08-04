@@ -68,16 +68,26 @@ lexer_reset(Lexer *x, const char *buf, size_t nbuf)
 Lexem
 lexer_next(Lexer *x)
 {
-    // skip whitespace
     while (1) {
-        if (x->cur == x->last) {
-            return (Lexem) {.kind = LEX_KIND_EOF, .start = x->cur, .size = 0};
+        // skip whitespace
+        while (1) {
+            if (x->cur == x->last) {
+                return (Lexem) {.kind = LEX_KIND_EOF, .start = x->cur, .size = 0};
+            }
+            if (!is_whitespace(*x->cur)) {
+                break;
+            }
+            ++x->cur;
         }
-        if (!is_whitespace(*x->cur)) {
+        // a comment?
+        if (*x->cur == '#') {
+            ++x->cur;
+            while (x->cur != x->last && *x->cur++ != '\n') {}
+        } else {
             break;
         }
-        ++x->cur;
     }
+
     // parse next token
     Lexem r = {.start = x->cur};
     char c = *x->cur;
@@ -94,11 +104,7 @@ lexer_next(Lexer *x)
         r.kind = LEX_KIND_COMMA;
         ++x->cur;
 
-    } else if (c == '=') {
-        r.kind = LEX_KIND_EQ;
-        ++x->cur;
-
-    } else if (c == ';') {
+    } else if (c == ';' || c == '\n') {
         r.kind = LEX_KIND_SEMICOLON;
         ++x->cur;
 
