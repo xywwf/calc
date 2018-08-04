@@ -625,7 +625,6 @@ main(int argc, char **argv)
                 if (env_eval(env, chunk, nchunk)) {
                     ret = EXIT_SUCCESS;
                 } else {
-                    // TODO output line?
                     fprintf(stderr, "%s\n", env_last_error(env));
                     env_free_last_error(env);
                 }
