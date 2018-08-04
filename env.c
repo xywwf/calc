@@ -71,7 +71,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             }
             break;
 
-        case CMD_PUSH_SCALAR:
+        case CMD_LOAD_SCALAR:
             LS_VECTOR_PUSH(stack, ((Value) {
                 .kind = VAL_KIND_SCALAR,
                 .as.scalar = in.args.scalar,
@@ -244,6 +244,8 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                 Value condition = stack.data[stack.size - 1];
                 if (!value_is_truthy(condition)) {
                     i = in.args.pos;
+                } else {
+                    ++i;
                 }
 
                 --stack.size;

@@ -79,8 +79,26 @@ lexer_next(Lexer *x)
             }
             ++x->cur;
         }
-        // a comment?
-        if (*x->cur == '#') {
+        if (*x->cur == '\\') { // an escape?
+            ++x->cur;
+            if (x->cur == x->last) {
+                return (Lexem) {
+                    .kind = LEX_KIND_ERROR,
+                    .data = "escape symbol at the end of input",
+                    .start = x->cur - 1,
+                    .size = 1,
+                };
+            }
+            if (*x->cur != '\n') {
+                return (Lexem) {
+                    .kind = LEX_KIND_ERROR,
+                    .data = "invalid escape (expected newline)",
+                    .start = x->cur,
+                    .size = 1,
+                };
+            }
+            ++x->cur;
+        } else if (*x->cur == '#') { // a comment?
             ++x->cur;
             while (x->cur != x->last && *x->cur++ != '\n') {}
         } else {

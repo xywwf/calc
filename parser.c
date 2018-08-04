@@ -9,12 +9,39 @@
 
 typedef LS_VECTOR_OF(size_t) FixupList;
 
+typedef LS_VECTOR_OF(FixupList) FixupStack;
+
+static
+void
+fixup_stack_clear(FixupStack *fs)
+{
+    for (size_t i = 0; i < fs->size; ++i) {
+        LS_VECTOR_FREE(fs->data[i]);
+    }
+    LS_VECTOR_CLEAR(*fs);
+}
+
+static
+void
+fixup_stack_free(FixupStack fs)
+{
+    fixup_stack_clear(&fs);
+    LS_VECTOR_FREE(fs);
+}
+
+static inline
+void
+fixup_stack_last_push(FixupStack *fs, size_t fixup_pos)
+{
+    LS_VECTOR_PUSH(fs->data[fs->size - 1], fixup_pos);
+}
+
 struct Parser {
     Lexer *lex;
     bool expr_end;
     LS_VECTOR_OF(Instr) chunk;
-    LS_VECTOR_OF(FixupList) fixup_cond;
-    LS_VECTOR_OF(FixupList) fixup_cycle;
+    FixupStack fixup_cond;
+    FixupStack fixup_cycle;
     LS_VECTOR_OF(size_t) cont_cycle;
     jmp_buf err_handler;
     ParserError err;
@@ -38,19 +65,9 @@ void
 parser_reset(Parser *p)
 {
     p->expr_end = false;
-
     LS_VECTOR_CLEAR(p->chunk);
-
-    for (size_t i = 0; i < p->fixup_cond.size; ++i) {
-        LS_VECTOR_FREE(p->fixup_cond.data[i]);
-    }
-    LS_VECTOR_CLEAR(p->fixup_cycle);
-
-    for (size_t i = 0; i < p->fixup_cycle.size; ++i) {
-        LS_VECTOR_FREE(p->fixup_cycle.data[i]);
-    }
-    LS_VECTOR_CLEAR(p->fixup_cycle);
-
+    fixup_stack_clear(&p->fixup_cond);
+    fixup_stack_clear(&p->fixup_cycle);
     LS_VECTOR_CLEAR(p->cont_cycle);
 }
 
@@ -62,14 +79,12 @@ typedef enum {
     STOP_TOK_SEMICOLON,
     STOP_TOK_EQ,
 
-    STOP_TOK_IF,
+    STOP_TOK_NONSENSE,
+
     STOP_TOK_THEN,
+    STOP_TOK_DO,
     STOP_TOK_ELIF,
     STOP_TOK_ELSE,
-    STOP_TOK_WHILE,
-    STOP_TOK_DO,
-    STOP_TOK_BREAK,
-    STOP_TOK_NEXT,
     STOP_TOK_END,
 
     STOP_TOK_EOF,
@@ -146,7 +161,7 @@ expr(Parser *p, int min_priority)
                 if (!scalar_parse(m.start, m.size, &scalar)) {
                     throw_at(p, m, "invalid number");
                 }
-                INSTR(p, CMD_PUSH_SCALAR, .scalar = scalar);
+                INSTR(p, CMD_LOAD_SCALAR, .scalar = scalar);
                 p->expr_end = true;
             }
             break;
@@ -306,38 +321,24 @@ expr(Parser *p, int min_priority)
             p->expr_end = false;
             return STOP_TOK_EQ;
 
-        case LEX_KIND_IF:
-            return STOP_TOK_IF;
-
-        case LEX_KIND_ELIF:
-            return STOP_TOK_ELIF;
-
-        case LEX_KIND_ELSE:
-            return STOP_TOK_ELSE;
-
         case LEX_KIND_THEN:
             AFTER_EXPR(p, m);
             p->expr_end = false;
             return STOP_TOK_THEN;
-
-        case LEX_KIND_WHILE:
-            return STOP_TOK_WHILE;
 
         case LEX_KIND_DO:
             AFTER_EXPR(p, m);
             p->expr_end = false;
             return STOP_TOK_DO;
 
+        case LEX_KIND_IF:
+        case LEX_KIND_ELIF:
+        case LEX_KIND_ELSE:
+        case LEX_KIND_WHILE:
         case LEX_KIND_BREAK:
-            return STOP_TOK_BREAK;
-
         case LEX_KIND_NEXT:
-            return STOP_TOK_NEXT;
-
         case LEX_KIND_END:
-            AFTER_EXPR(p, m);
-            p->expr_end = false;
-            return STOP_TOK_END;
+            return STOP_TOK_NONSENSE;
         }
     }
 }
@@ -409,7 +410,6 @@ stmt(Parser *p)
             }
 
             LS_VECTOR_PUSH(p->fixup_cond, (FixupList) LS_VECTOR_NEW());
-#define OUR_FIXUP_LIST p->fixup_cond.data[p->fixup_cond.size - 1]
 
             size_t prev_jump_unless = p->chunk.size;
             INSTR_N(p, CMD_JUMP_UNLESS);
@@ -427,7 +427,7 @@ stmt(Parser *p)
                         throw_at(p, lexer_next(p->lex), "':elif' after ':else'");
                     }
 
-                    LS_VECTOR_PUSH(OUR_FIXUP_LIST, p->chunk.size);
+                    fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
                     INSTR_N(p, CMD_JUMP);
 
                     p->chunk.data[prev_jump_unless].args.pos = p->chunk.size;
@@ -445,7 +445,7 @@ stmt(Parser *p)
                         throw_at(p, lexer_next(p->lex), "double ':else'");
                     }
 
-                    LS_VECTOR_PUSH(OUR_FIXUP_LIST, p->chunk.size);
+                    fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
                     INSTR_N(p, CMD_JUMP);
 
                     p->chunk.data[prev_jump_unless].args.pos = p->chunk.size;
@@ -465,13 +465,12 @@ stmt(Parser *p)
                 p->chunk.data[prev_jump_unless].args.pos = end_pos;
             }
 
-            FixupList fl = OUR_FIXUP_LIST;
+            FixupList fl = p->fixup_cond.data[p->fixup_cond.size - 1];
             for (size_t i = 0; i < fl.size; ++i) {
                 p->chunk.data[fl.data[i]].args.pos = end_pos;
             }
             LS_VECTOR_FREE(fl);
             --p->fixup_cond.size;
-#undef OUR_FIXUP_LIST
 
             p->expr_end = false;
 
@@ -614,5 +613,8 @@ void
 parser_destroy(Parser *p)
 {
     LS_VECTOR_FREE(p->chunk);
+    fixup_stack_free(p->fixup_cond);
+    fixup_stack_free(p->fixup_cycle);
+    LS_VECTOR_FREE(p->cont_cycle);
     free(p);
 }

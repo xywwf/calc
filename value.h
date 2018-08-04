@@ -21,7 +21,7 @@ value_kindname(ValueKind kind)
     case VAL_KIND_MATRIX:
         return "matrix";
     case VAL_KIND_CFUNC:
-        return "function";
+        return "cfunction";
     default:
         LS_UNREACHABLE();
     }

@@ -8,7 +8,7 @@ struct Env;
 
 typedef enum {
     CMD_PRINT,
-    CMD_PUSH_SCALAR,
+    CMD_LOAD_SCALAR,
     CMD_LOAD,
     CMD_STORE,
     CMD_LOAD_AT,
@@ -25,7 +25,7 @@ typedef enum {
 typedef struct {
     Command cmd;
     union {
-        // CMD_PUSH_SCALAR
+        // CMD_LOAD_SCALAR
         Scalar scalar;
 
         // CMD_LOAD, CMD_STORE
