@@ -309,6 +309,15 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             }
             continue;
 
+        case CMD_EXIT:
+            if (!callstack.size) {
+                goto done;
+            }
+            LS_VECTOR_PUSH(stack, ((Value) {
+                .kind = VAL_KIND_SCALAR,
+                .as = {.scalar = 0},
+            }));
+            // fall through
         case CMD_RETURN:
             {
                 scopes_pop(scopes);
@@ -317,25 +326,6 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                 --stack.size;
                 chunk = callstack.data[callstack.size - 1] + 1;
                 --callstack.size;
-            }
-            continue;
-
-        case CMD_EXIT:
-            {
-                if (callstack.size) {
-                    LS_VECTOR_PUSH(stack, ((Value) {
-                        .kind = VAL_KIND_SCALAR,
-                        .as = {.scalar = 0},
-                    }));
-                    scopes_pop(scopes);
-                    value_unref(stack.data[stack.size - 2]);
-                    stack.data[stack.size - 2] = stack.data[stack.size - 1];
-                    --stack.size;
-                    chunk = callstack.data[callstack.size - 1] + 1;
-                    --callstack.size;
-                } else {
-                    goto done;
-                }
             }
             continue;
         }
