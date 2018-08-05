@@ -1,9 +1,5 @@
-A calculator written to practice building lexers/parsers.
+A calculator written to practice building lexers/parsers, and also writing data structures such as hash table and trie.
 
-It supports variables, matrices and user-defined operators and functions.
+It supports variables, matrices, strings, conditions, loops and :break/:next, functions (that persist when loading another chunk of code), and function-local variables.
 
-It compiles expressions to bytecode which is then executed on a virtual machine. It even has a primitive reference-counting garbage collector for matrices.
-
-It also supports first-class functions, although currently there is little use of this feature.
-
-Basically this is more like an early stage of yet another programming language.
+It compiles expressions to bytecode which is then executed on a virtual machine. It has a primitive reference-counting garbage collector for non-scalar types.
