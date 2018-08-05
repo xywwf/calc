@@ -5,12 +5,12 @@
 #include "value.h"
 #include "vm.h"
 
-#include "libls/vector.h"
+#include "libls/string_.h"
 
 typedef struct {
     GcObject gchdr;
     unsigned nargs;
-    LS_VECTOR_OF(void *) dups;
+    char * strdups;
     size_t nchunk;
     Instr chunk[];
 } Func;
