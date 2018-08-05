@@ -1,8 +1,25 @@
 #include "value.h"
 #include "matrix.h"
 #include "str.h"
+#include "func.h"
 
 #include <stdio.h>
+
+void
+gcobject_destroy(Value v)
+{
+    switch (v.kind) {
+        case VAL_KIND_FUNC:
+            func_destroy((Func *) v.as.gcobj);
+            // fallthrough
+        case VAL_KIND_MATRIX:
+        case VAL_KIND_STR:
+            free(v.as.gcobj);
+            break;
+        default:
+            break;
+    }
+}
 
 void
 value_print(Value v)

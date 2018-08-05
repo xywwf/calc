@@ -23,7 +23,7 @@ value_kindname(ValueKind kind)
     case VAL_KIND_MATRIX:
         return "matrix";
     case VAL_KIND_CFUNC:
-        return "cfunction";
+        return "built-in function";
     case VAL_KIND_FUNC:
         return "function";
     case VAL_KIND_STR:
@@ -46,6 +46,9 @@ typedef struct Value {
         struct Value (*cfunc)(struct Env *e, const struct Value *args, unsigned nargs);
     } as;
 } Value;
+
+void
+gcobject_destroy(Value v);
 
 LS_INHEADER
 void
@@ -71,7 +74,7 @@ value_unref(Value v)
     case VAL_KIND_FUNC:
     case VAL_KIND_STR:
         if (!--v.as.gcobj->nrefs) {
-            free(v.as.gcobj);
+            gcobject_destroy(v);
         }
         break;
     default:

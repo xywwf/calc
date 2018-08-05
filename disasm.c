@@ -17,7 +17,7 @@ disasm_print(const Instr *chunk, size_t nchunk)
             printf(CMDFMT "%g\n", "load_scalar", in.args.scalar);
             break;
         case CMD_LOAD_STR:
-            printf(CMDFMT "\"%.*s\"\n", "load_str", (int) in.args.str.size, in.args.str.start);
+            printf(CMDFMT "%.*s\n", "load_str", (int) in.args.str.size, in.args.str.start);
             break;
         case CMD_LOAD:
             printf(CMDFMT "\"%.*s\"\n", "load", (int) in.args.varname.size, in.args.varname.start);
