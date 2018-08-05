@@ -40,6 +40,7 @@ struct Parser {
     Lexer *lex;
     bool expr_end;
     LS_VECTOR_OF(Instr) chunk;
+    size_t func_level;
     FixupStack fixup_cond;
     FixupStack fixup_cycle;
     LS_VECTOR_OF(size_t) cont_cycle;
@@ -66,6 +67,7 @@ parser_reset(Parser *p)
 {
     p->expr_end = false;
     LS_VECTOR_CLEAR(p->chunk);
+    p->func_level = 0;
     fixup_stack_clear(&p->fixup_cond);
     fixup_stack_clear(&p->fixup_cycle);
     LS_VECTOR_CLEAR(p->cont_cycle);
@@ -78,16 +80,19 @@ typedef enum {
     STOP_TOK_COMMA,
     STOP_TOK_SEMICOLON,
     STOP_TOK_EQ,
+    STOP_TOK_COLON_EQ,
 
     STOP_TOK_NONSENSE,
 
     STOP_TOK_THEN,
     STOP_TOK_DO,
+
+    STOP_TOK_EOF,
+
+    // for stmt() only:
     STOP_TOK_ELIF,
     STOP_TOK_ELSE,
     STOP_TOK_END,
-
-    STOP_TOK_EOF,
 } StopTokenKind;
 
 static LS_ATTR_NORETURN
@@ -166,6 +171,14 @@ expr(Parser *p, int min_priority)
             }
             break;
 
+        case LEX_KIND_STR:
+            {
+                THIS_IS_EXPR(p, m);
+                INSTR(p, CMD_LOAD_STR, .str = {.start = m.start, .size = m.size});
+                p->expr_end = true;
+            }
+            break;
+
         case LEX_KIND_IDENT:
             {
                 THIS_IS_EXPR(p, m);
@@ -185,7 +198,9 @@ expr(Parser *p, int min_priority)
             {
                 Op *op = m.data;
 
-                if ((int) op->priority < min_priority) {
+                if ((int) op->priority < min_priority &&
+                    !(op->arity == 1 && op->assoc == OP_ASSOC_RIGHT))
+                {
                     lexer_rollback(p->lex);
                     return STOP_TOK_OP;
                 }
@@ -321,6 +336,11 @@ expr(Parser *p, int min_priority)
             p->expr_end = false;
             return STOP_TOK_EQ;
 
+        case LEX_KIND_COLON_EQ:
+            AFTER_EXPR(p, m);
+            p->expr_end = false;
+            return STOP_TOK_COLON_EQ;
+
         case LEX_KIND_THEN:
             AFTER_EXPR(p, m);
             p->expr_end = false;
@@ -337,9 +357,23 @@ expr(Parser *p, int min_priority)
         case LEX_KIND_WHILE:
         case LEX_KIND_BREAK:
         case LEX_KIND_NEXT:
+        case LEX_KIND_FU:
+        case LEX_KIND_RETURN:
+        case LEX_KIND_EXIT:
         case LEX_KIND_END:
             return STOP_TOK_NONSENSE;
         }
+    }
+}
+
+static
+void
+reverse_chunk(Instr *chunk, size_t nchunk)
+{
+    for (size_t i = 0; i < nchunk / 2; ++i) {
+        Instr tmp = chunk[i];
+        chunk[i] = chunk[nchunk - i - 1];
+        chunk[nchunk - i - 1] = tmp;
     }
 }
 
@@ -389,7 +423,8 @@ stmt(Parser *p)
             if (!p->cont_cycle.size) {
                 throw_at(p, m, "':next' outside of a cycle");
             }
-            INSTR(p, CMD_JUMP, .pos = p->cont_cycle.data[p->cont_cycle.size - 1]);
+            INSTR(p, CMD_JUMP, .offset =
+                (ssize_t) p->cont_cycle.data[p->cont_cycle.size - 1] - p->chunk.size + 1);
             Lexem m = lexer_next(p->lex);
             switch (m.kind) {
             case LEX_KIND_SEMICOLON:
@@ -430,7 +465,7 @@ stmt(Parser *p)
                     fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
                     INSTR_N(p, CMD_JUMP);
 
-                    p->chunk.data[prev_jump_unless].args.pos = p->chunk.size;
+                    p->chunk.data[prev_jump_unless].args.offset = p->chunk.size - prev_jump_unless;
 
                     if (expr(p, -1) != STOP_TOK_THEN) {
                         lexer_rollback(p->lex);
@@ -448,7 +483,7 @@ stmt(Parser *p)
                     fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
                     INSTR_N(p, CMD_JUMP);
 
-                    p->chunk.data[prev_jump_unless].args.pos = p->chunk.size;
+                    p->chunk.data[prev_jump_unless].args.offset = p->chunk.size - prev_jump_unless;
 
                     prev_jump_unless = (size_t) -1;
 
@@ -462,12 +497,13 @@ stmt(Parser *p)
 
             const size_t end_pos = p->chunk.size;
             if (prev_jump_unless != (size_t) -1) {
-                p->chunk.data[prev_jump_unless].args.pos = end_pos;
+                p->chunk.data[prev_jump_unless].args.offset = end_pos - prev_jump_unless;
             }
 
             FixupList fl = p->fixup_cond.data[p->fixup_cond.size - 1];
             for (size_t i = 0; i < fl.size; ++i) {
-                p->chunk.data[fl.data[i]].args.pos = end_pos;
+                const size_t at = fl.data[i];
+                p->chunk.data[at].args.offset = end_pos - at;
             }
             LS_VECTOR_FREE(fl);
             --p->fixup_cond.size;
@@ -509,13 +545,14 @@ stmt(Parser *p)
                 throw_at(p, lexer_next(p->lex), "expected ':end'");
             }
 
-            INSTR(p, CMD_JUMP, .pos = check_instr);
+            INSTR(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
 
             const size_t end_pos = p->chunk.size;
-            p->chunk.data[jump_instr].args.pos = end_pos;
+            p->chunk.data[jump_instr].args.offset = end_pos - jump_instr;
             FixupList fl = p->fixup_cycle.data[p->fixup_cycle.size - 1];
             for (size_t i = 0; i < fl.size; ++i) {
-                p->chunk.data[fl.data[i]].args.pos = end_pos;
+                const size_t at = fl.data[i];
+                p->chunk.data[at].args.offset = end_pos - at;
             }
             LS_VECTOR_FREE(fl);
             --p->fixup_cycle.size;
@@ -535,6 +572,108 @@ stmt(Parser *p)
         }
         break;
 
+    case LEX_KIND_EXIT:
+        {
+            INSTR_N(p, CMD_EXIT);
+            Lexem m = lexer_next(p->lex);
+            switch (m.kind) {
+            case LEX_KIND_SEMICOLON:
+                return STOP_TOK_SEMICOLON;
+            case LEX_KIND_EOF:
+                return STOP_TOK_EOF;
+            default:
+                throw_at(p, m, "expected end of statement");
+            }
+        }
+        break;
+
+    case LEX_KIND_RETURN:
+        {
+            if (!p->func_level) {
+                throw_at(p, m, "':return' outside of a function");
+            }
+            StopTokenKind s = expr(p, -1);
+            INSTR_N(p, CMD_RETURN);
+            switch (s) {
+            case STOP_TOK_SEMICOLON:
+                return STOP_TOK_SEMICOLON;
+            case STOP_TOK_EOF:
+                return STOP_TOK_EOF;
+            default:
+                lexer_rollback(p->lex);
+                throw_at(p, lexer_next(p->lex), "expected end of expression");
+            }
+        }
+        break;
+
+    case LEX_KIND_FU:
+        {
+            Lexem funame = lexer_next(p->lex);
+            if (funame.kind != LEX_KIND_IDENT) {
+                throw_at(p, funame, "expected identifier");
+            }
+
+            Lexem lbrace = lexer_next(p->lex);
+            if (lbrace.kind != LEX_KIND_LBRACE) {
+                throw_at(p, lbrace, "expected '('");
+            }
+
+            const size_t fu_instr = p->chunk.size;
+            INSTR_N(p, CMD_FUNCTION);
+
+            unsigned nargs = 0;
+            bool ident_expected = false;
+            while (1) {
+                Lexem m = lexer_next(p->lex);
+                if (m.kind == LEX_KIND_IDENT) {
+                    if (!ident_expected && nargs != 0) {
+                        throw_at(p, m, "wtf");
+                    }
+                    ++nargs;
+                    INSTR(p, CMD_LOCAL, .varname = {.start = m.start, .size = m.size});
+                    ident_expected = false;
+                } else if (m.kind == LEX_KIND_COMMA) {
+                    ident_expected = true;
+                } else if (m.kind == LEX_KIND_RBRACE) {
+                    if (ident_expected) {
+                        throw_at(p, m, "wtf");
+                    }
+                    break;
+                } else {
+                    throw_at(p, m, "wtf");
+                }
+            }
+            reverse_chunk(p->chunk.data + fu_instr + 1, nargs);
+
+            ++p->func_level;
+
+            StopTokenKind s;
+            while ((s = stmt(p)) == STOP_TOK_SEMICOLON) {}
+            if (s != STOP_TOK_END) {
+                lexer_rollback(p->lex);
+                throw_at(p, lexer_next(p->lex), "expected ':end'");
+            }
+
+            --p->func_level;
+
+            INSTR_N(p, CMD_EXIT);
+            p->chunk.data[fu_instr].args.func.nargs = nargs;
+            p->chunk.data[fu_instr].args.func.offset = p->chunk.size - fu_instr;
+
+            INSTR(p, CMD_STORE, .varname = {.start = funame.start, .size = funame.size});
+
+            Lexem m2 = lexer_next(p->lex);
+            switch (m2.kind) {
+            case LEX_KIND_SEMICOLON:
+                return STOP_TOK_SEMICOLON;
+            case LEX_KIND_EOF:
+                return STOP_TOK_EOF;
+            default:
+                throw_at(p, m2, "expected end of statement");
+            }
+        }
+        break;
+
     default:
         {
             lexer_rollback(p->lex);
@@ -545,15 +684,19 @@ stmt(Parser *p)
                 INSTR_N(p, CMD_PRINT);
                 return s;
             case STOP_TOK_EQ:
+            case STOP_TOK_COLON_EQ:
                 {
                     Instr last = p->chunk.data[p->chunk.size - 1];
                     switch (last.cmd) {
                     case CMD_LOAD:
-                        last.cmd = CMD_STORE;
+                        last.cmd = s == STOP_TOK_EQ ? CMD_STORE : CMD_LOCAL;
                         break;
                     case CMD_LOAD_AT:
-                        last.cmd = CMD_STORE_AT;
-                        break;
+                        if (s == STOP_TOK_EQ) {
+                            last.cmd = CMD_STORE_AT;
+                            break;
+                        }
+                        // fallthrough
                     default:
                         lexer_rollback(p->lex);
                         throw_at(p, lexer_next(p->lex), "invalid assignment");
@@ -592,7 +735,7 @@ parser_parse_expr(Parser *p)
         lexer_rollback(p->lex);
         throw_at(p, lexer_next(p->lex), "syntax error");
     }
-    INSTR_N(p, CMD_HALT);
+    INSTR_N(p, CMD_EXIT);
     return true;
 }
 

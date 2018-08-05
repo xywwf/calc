@@ -134,6 +134,21 @@ lexer_next(Lexer *x)
         r.kind = LEX_KIND_RBRACKET;
         ++x->cur;
 
+    } else if (c == '"') {
+        r.kind = LEX_KIND_STR;
+        do {
+            ++x->cur;
+            if (x->cur == x->last) {
+                return (Lexem) {
+                    .kind = LEX_KIND_ERROR,
+                    .data = "unterminated string",
+                    .start = x->cur,
+                    .size = 0,
+                };
+            }
+        } while (*x->cur != '"');
+        ++x->cur;
+
     } else if (is_number_start(c)) {
         r.kind = LEX_KIND_NUM;
         do {

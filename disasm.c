@@ -16,11 +16,17 @@ disasm_print(const Instr *chunk, size_t nchunk)
         case CMD_LOAD_SCALAR:
             printf(CMDFMT "%g\n", "load_scalar", in.args.scalar);
             break;
+        case CMD_LOAD_STR:
+            printf(CMDFMT "\"%.*s\"\n", "load_str", (int) in.args.str.size, in.args.str.start);
+            break;
         case CMD_LOAD:
             printf(CMDFMT "\"%.*s\"\n", "load", (int) in.args.varname.size, in.args.varname.start);
             break;
         case CMD_STORE:
             printf(CMDFMT "\"%.*s\"\n", "store", (int) in.args.varname.size, in.args.varname.start);
+            break;
+        case CMD_LOCAL:
+            printf(CMDFMT "\"%.*s\"\n", "local", (int) in.args.varname.size, in.args.varname.start);
             break;
         case CMD_LOAD_AT:
             printf(CMDFMT "%u\n", "load_at", in.args.nindices);
@@ -41,13 +47,20 @@ disasm_print(const Instr *chunk, size_t nchunk)
             printf(CMDFMT "%u, %u\n", "matrix", in.args.dims.height, in.args.dims.width);
             break;
         case CMD_JUMP:
-            printf(CMDFMT "%zu\n", "jump", in.args.pos);
+            printf(CMDFMT "%+zd\n", "jump", in.args.offset);
             break;
         case CMD_JUMP_UNLESS:
-            printf(CMDFMT "%zu\n", "jump_unless", in.args.pos);
+            printf(CMDFMT "%+zd\n", "jump_unless", in.args.offset);
             break;
-        case CMD_HALT:
-            printf(CMDFMT "\n", "halt");
+        case CMD_FUNCTION:
+            printf(CMDFMT "%u, %+zd\n", "function", in.args.func.nargs, in.args.func.offset);
+            break;
+        case CMD_RETURN:
+            printf(CMDFMT "\n", "return");
+            break;
+        case CMD_EXIT:
+            printf(CMDFMT "\n", "exit");
+            break;
         }
     }
 #undef CMDFMT

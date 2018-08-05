@@ -1,4 +1,2 @@
 - add support for vector/matrix reallocation?
 - add support for mpfr/biginteger/bigrational/bigdecimal arithmetics?
-- add functions (with arguments!)
-    * add scope for variables

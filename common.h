@@ -9,8 +9,4 @@
 #include "libls/panic.h"
 #include "libls/compdep.h"
 
-//#include <stdio.h>
-//#define DEBUG(...) fprintf(stderr, __VA_ARGS__)
-#define DEBUG(...) ((void) 0)
-
 #endif

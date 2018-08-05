@@ -9,6 +9,8 @@ typedef enum {
     VAL_KIND_SCALAR,
     VAL_KIND_MATRIX,
     VAL_KIND_CFUNC,
+    VAL_KIND_FUNC,
+    VAL_KIND_STR,
 } ValueKind;
 
 LS_INHEADER
@@ -22,9 +24,12 @@ value_kindname(ValueKind kind)
         return "matrix";
     case VAL_KIND_CFUNC:
         return "cfunction";
-    default:
-        LS_UNREACHABLE();
+    case VAL_KIND_FUNC:
+        return "function";
+    case VAL_KIND_STR:
+        return "string";
     }
+    LS_UNREACHABLE();
 }
 
 typedef double Scalar;
@@ -32,13 +37,6 @@ typedef double Scalar;
 typedef struct {
     unsigned nrefs;
 } GcObject;
-
-typedef struct {
-    GcObject gchdr;
-    unsigned height;
-    unsigned width;
-    Scalar elems[];
-} Matrix;
 
 typedef struct Value {
     ValueKind kind;
@@ -55,6 +53,8 @@ value_ref(Value v)
 {
     switch (v.kind) {
     case VAL_KIND_MATRIX:
+    case VAL_KIND_FUNC:
+    case VAL_KIND_STR:
         ++v.as.gcobj->nrefs;
         break;
     default:
@@ -68,6 +68,8 @@ value_unref(Value v)
 {
     switch (v.kind) {
     case VAL_KIND_MATRIX:
+    case VAL_KIND_FUNC:
+    case VAL_KIND_STR:
         if (!--v.as.gcobj->nrefs) {
             free(v.as.gcobj);
         }
@@ -85,23 +87,5 @@ value_is_truthy(Value v);
 
 bool
 scalar_parse(const char *buf, size_t nbuf, Scalar *result);
-
-Matrix *
-matrix_new(unsigned height, unsigned width);
-
-Matrix *
-matrix_construct(struct Env *e, const Value *elems, unsigned height, unsigned width);
-
-Value
-matrix_get1(struct Env *e, Matrix *m, Value elem);
-
-Value
-matrix_get2(struct Env *e, Matrix *m, Value row, Value col);
-
-void
-matrix_set1(struct Env *e, Matrix *m, Value elem, Value v);
-
-void
-matrix_set2(struct Env *e, Matrix *m, Value row, Value col, Value v);
 
 #endif

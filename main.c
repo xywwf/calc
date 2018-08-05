@@ -11,7 +11,12 @@
 #include "trie.h"
 #include "lexer.h"
 #include "parser.h"
+#include "scopes.h"
 #include "env.h"
+#include "value.h"
+#include "matrix.h"
+#include "func.h"
+#include "str.h"
 #include "disasm.h"
 
 #define ASMAT(V_) ((Matrix *) (V_).as.gcobj)
@@ -210,9 +215,12 @@ X_eq(Env *e, Value a, Value b)
         break;
     case VAL_KIND_CFUNC:
         return SCALAR(a.as.cfunc == b.as.cfunc);
-    default:
-        LS_UNREACHABLE();
+    case VAL_KIND_FUNC:
+        return SCALAR(a.as.gcobj == b.as.gcobj);
+    case VAL_KIND_STR:
+        return SCALAR(str_eq((Str *) a.as.gcobj, (Str *) b.as.gcobj));
     }
+    LS_UNREACHABLE();
 }
 
 static
@@ -244,19 +252,36 @@ X_ne(Env *e, Value a, Value b)
         break;
     case VAL_KIND_CFUNC:
         return SCALAR(a.as.cfunc != b.as.cfunc);
-    default:
-        LS_UNREACHABLE();
+    case VAL_KIND_FUNC:
+        return SCALAR(a.as.gcobj != b.as.gcobj);
+    case VAL_KIND_STR:
+        return SCALAR(!str_eq((Str *) a.as.gcobj, (Str *) b.as.gcobj));
     }
+    LS_UNREACHABLE();
 }
 
 static
 Value
 X_not(Env *e, Value a)
 {
-    if (a.kind != VAL_KIND_SCALAR) {
-        env_throw(e, "cannot calculate boolean negation of a %s value", value_kindname(a.kind));
-    }
-    return SCALAR(!a.as.scalar);
+    (void) e;
+    return SCALAR(!value_is_truthy(a));
+}
+
+static
+Value
+X_and(Env *e, Value a, Value b)
+{
+    (void) e;
+    return SCALAR(value_is_truthy(a) && value_is_truthy(b));
+}
+
+static
+Value
+X_or(Env *e, Value a, Value b)
+{
+    (void) e;
+    return SCALAR(value_is_truthy(a) || value_is_truthy(b));
 }
 
 static
@@ -361,6 +386,21 @@ X_Transpose(Env *e, const Value *args, unsigned nargs)
         }
     }
     return MAT(y);
+}
+
+static
+Value
+X_DisAsm(Env *e, const Value *args, unsigned nargs)
+{
+    if (nargs != 1) {
+        env_throw(e, "'DisAsm' expects exactly one argument");
+    }
+    if (args[0].kind != VAL_KIND_FUNC) {
+        env_throw(e, "'DisAsm' can only be applied to a function");
+    }
+    Func *f = (Func *) args[0].as.gcobj;
+    disasm_print(f->chunk, f->nchunk);
+    return SCALAR(0);
 }
 
 static
@@ -478,7 +518,9 @@ main(int argc, char **argv)
     REG_OP("%", BINARY(X_mod, .assoc = OP_ASSOC_LEFT, .priority = 2));
     REG_OP("^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
 
-    REG_OP("!", UNARY(X_not, .assoc = OP_ASSOC_RIGHT, .priority = 0));
+    REG_OP("!",  UNARY(X_not,  .assoc = OP_ASSOC_RIGHT, .priority = 0));
+    REG_OP("&&", BINARY(X_and, .assoc = OP_ASSOC_LEFT,  .priority = 0));
+    REG_OP("||", BINARY(X_or,  .assoc = OP_ASSOC_LEFT,  .priority = 0));
 
     REG_OP("<",  BINARY(X_lt, .assoc = OP_ASSOC_LEFT, .priority = 0));
     REG_OP("<=", BINARY(X_le, .assoc = OP_ASSOC_LEFT, .priority = 0));
@@ -487,7 +529,8 @@ main(int argc, char **argv)
     REG_OP(">",  BINARY(X_gt, .assoc = OP_ASSOC_LEFT, .priority = 0));
     REG_OP(">=", BINARY(X_ge, .assoc = OP_ASSOC_LEFT, .priority = 0));
 
-    trie_insert(ops, "=", LEX_KIND_EQ, NULL);
+    trie_insert(ops, "=",  LEX_KIND_EQ,       NULL);
+    trie_insert(ops, ":=", LEX_KIND_COLON_EQ, NULL);
 
     trie_insert(ops, ":if",     LEX_KIND_IF,     NULL);
     trie_insert(ops, ":then",   LEX_KIND_THEN,   NULL);
@@ -497,6 +540,9 @@ main(int argc, char **argv)
     trie_insert(ops, ":do",     LEX_KIND_DO,     NULL);
     trie_insert(ops, ":break",  LEX_KIND_BREAK,  NULL);
     trie_insert(ops, ":next",   LEX_KIND_NEXT,   NULL);
+    trie_insert(ops, ":fu",     LEX_KIND_FU,     NULL);
+    trie_insert(ops, ":return", LEX_KIND_RETURN, NULL);
+    trie_insert(ops, ":exit",   LEX_KIND_EXIT,   NULL);
     trie_insert(ops, ":end",    LEX_KIND_END,    NULL);
 
     // inv, rank, det, kernel, image, LU, tr[ace], solve
@@ -504,24 +550,25 @@ main(int argc, char **argv)
 
     Lexer *lex = lexer_new(ops);
     Parser *parser = parser_new(lex);
-    Ht *ht = ht_new(6);
+    Scopes *scopes = scopes_new();
 #define NAME(S_) S_, strlen(S_)
-    ht_put(ht, NAME("sin"),   CFUNC(X_sin));
-    ht_put(ht, NAME("cos"),   CFUNC(X_cos));
-    ht_put(ht, NAME("atan"),  CFUNC(X_atan));
-    ht_put(ht, NAME("ln"),    CFUNC(X_log));
-    ht_put(ht, NAME("exp"),   CFUNC(X_exp));
-    ht_put(ht, NAME("floor"), CFUNC(X_floor));
-    ht_put(ht, NAME("ceil"),  CFUNC(X_ceil));
+    scopes_put(scopes, NAME("sin"),   CFUNC(X_sin));
+    scopes_put(scopes, NAME("cos"),   CFUNC(X_cos));
+    scopes_put(scopes, NAME("atan"),  CFUNC(X_atan));
+    scopes_put(scopes, NAME("ln"),    CFUNC(X_log));
+    scopes_put(scopes, NAME("exp"),   CFUNC(X_exp));
+    scopes_put(scopes, NAME("floor"), CFUNC(X_floor));
+    scopes_put(scopes, NAME("ceil"),  CFUNC(X_ceil));
 
-    ht_put(ht, NAME("sum"),   CFUNC(X_sum));
-    ht_put(ht, NAME("Mat"),   CFUNC(X_Mat));
-    ht_put(ht, NAME("Dim"),   CFUNC(X_Dim));
-    ht_put(ht, NAME("Trans"), CFUNC(X_Transpose));
+    scopes_put(scopes, NAME("sum"),   CFUNC(X_sum));
+    scopes_put(scopes, NAME("Mat"),   CFUNC(X_Mat));
+    scopes_put(scopes, NAME("Dim"),   CFUNC(X_Dim));
+    scopes_put(scopes, NAME("Trans"), CFUNC(X_Transpose));
+    scopes_put(scopes, NAME("DisAsm"), CFUNC(X_DisAsm));
 
-    ht_put(ht, NAME("pi"), SCALAR(acos(-1)));
+    scopes_put(scopes, NAME("pi"), SCALAR(acos(-1)));
 
-    Env *env = env_new(ht);
+    Env *env = env_new(scopes);
 
     bool interactive = false;
     char *code;
@@ -655,7 +702,7 @@ cleanup:
     trie_destroy(ops);
     lexer_destroy(lex);
     parser_destroy(parser);
-    ht_destroy(ht);
+    scopes_destroy(scopes);
     env_destroy(env);
     return ret;
 }

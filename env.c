@@ -1,5 +1,8 @@
 #include "env.h"
-#include "ht.h"
+#include "scopes.h"
+#include "func.h"
+#include "matrix.h"
+#include "str.h"
 
 #include <string.h>
 #include <setjmp.h>
@@ -16,17 +19,17 @@
 #endif
 
 struct Env {
-    Ht *ht;
+    Scopes *scopes;
     jmp_buf err_handler;
     char *err;
 };
 
 Env *
-env_new(Ht *ht)
+env_new(Scopes *scopes)
 {
     Env *e = LS_XNEW(Env, 1);
     *e = (Env) {
-        .ht = ht,
+        .scopes = scopes,
     };
     return e;
 }
@@ -38,8 +41,11 @@ env_new(Ht *ht)
 bool
 env_eval(Env *e, const Instr *chunk, size_t nchunk)
 {
+    (void) nchunk;
+    Scopes *scopes = e->scopes;
     bool ok = true;
     LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
+    LS_VECTOR_OF(const Instr *) callstack = LS_VECTOR_NEW();
 
 #define ERR(...) \
     do { \
@@ -57,9 +63,8 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
     } while (0)
 
     (void) nchunk;
-    size_t i = 0;
     while (1) {
-        Instr in = chunk[i];
+        Instr in = *chunk;
         switch (in.cmd) {
         case CMD_PRINT:
             {
@@ -78,10 +83,20 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             }));
             break;
 
+        case CMD_LOAD_STR:
+            {
+                Str *s = str_new(in.args.str.start + 1, in.args.str.size - 2);
+                LS_VECTOR_PUSH(stack, ((Value) {
+                    .kind = VAL_KIND_STR,
+                    .as.gcobj = (GcObject *) s,
+                }));
+            }
+            break;
+
         case CMD_LOAD:
             {
                 Value value;
-                if (!ht_get(e->ht, in.args.varname.start, in.args.varname.size, &value)) {
+                if (!scopes_get(scopes, in.args.varname.start, in.args.varname.size, &value)) {
                     ERR("undefined variable '%.*s'",
                         (int) in.args.varname.size, in.args.varname.start);
                 }
@@ -92,7 +107,16 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
         case CMD_STORE:
             {
                 Value value = stack.data[stack.size - 1];
-                ht_put(e->ht, in.args.varname.start, in.args.varname.size, value);
+                scopes_put(scopes, in.args.varname.start, in.args.varname.size, value);
+                --stack.size;
+                value_unref(value);
+            }
+            break;
+
+        case CMD_LOCAL:
+            {
+                Value value = stack.data[stack.size - 1];
+                scopes_put_local(scopes, in.args.varname.start, in.args.varname.size, value);
                 --stack.size;
                 value_unref(value);
             }
@@ -197,20 +221,36 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
 #   pragma GCC diagnostic pop
 #endif
 
-                if (func.kind != VAL_KIND_CFUNC) {
+                switch (func.kind) {
+                case VAL_KIND_CFUNC:
+                    {
+                        // <danger>
+                        PROTECT();
+                        Value result = func.as.cfunc(e, ptr + 1, in.args.nargs);
+                        // </danger>
+                        for (size_t i = 0; i < in.args.nargs + 1; ++i) {
+                            value_unref(ptr[i]);
+                        }
+                        *ptr = result;
+                        stack.size -= in.args.nargs;
+                    }
+                    break;
+
+                case VAL_KIND_FUNC:
+                    {
+                        Func *f = (Func *) func.as.gcobj;
+                        if (in.args.nargs != f->nargs) {
+                            ERR("wrong # of arguments");
+                        }
+                        scopes_push(scopes);
+                        LS_VECTOR_PUSH(callstack, chunk);
+                        chunk = f->chunk;
+                    }
+                    continue;
+
+                default:
                     ERR("cannot call %s value", value_kindname(func.kind));
                 }
-
-                // <danger>
-                PROTECT();
-                Value result = func.as.cfunc(e, ptr + 1, in.args.nargs);
-                // </danger>
-
-                for (size_t i = 0; i < in.args.nargs + 1; ++i) {
-                    value_unref(ptr[i]);
-                }
-                *ptr = result;
-                stack.size -= in.args.nargs;
             }
             break;
 
@@ -236,16 +276,16 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             break;
 
         case CMD_JUMP:
-            i = in.args.pos;
+            chunk += in.args.offset;
             continue;
 
         case CMD_JUMP_UNLESS:
             {
                 Value condition = stack.data[stack.size - 1];
                 if (!value_is_truthy(condition)) {
-                    i = in.args.pos;
+                    chunk += in.args.offset;
                 } else {
-                    ++i;
+                    ++chunk;
                 }
 
                 --stack.size;
@@ -253,11 +293,54 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             }
             continue;
 
-        case CMD_HALT:
-            goto done;
+        case CMD_FUNCTION:
+            {
+                Func *f = func_new(
+                    in.args.func.nargs,
+                    chunk + 1,
+                    in.args.func.offset - 1);
+
+                LS_VECTOR_PUSH(stack, ((Value) {
+                    .kind = VAL_KIND_FUNC,
+                    .as = {.gcobj = (GcObject *) f},
+                }));
+
+                chunk += in.args.func.offset;
+            }
+            continue;
+
+        case CMD_RETURN:
+            {
+                scopes_pop(scopes);
+                value_unref(stack.data[stack.size - 2]);
+                stack.data[stack.size - 2] = stack.data[stack.size - 1];
+                --stack.size;
+                chunk = callstack.data[callstack.size - 1] + 1;
+                --callstack.size;
+            }
+            continue;
+
+        case CMD_EXIT:
+            {
+                if (callstack.size) {
+                    LS_VECTOR_PUSH(stack, ((Value) {
+                        .kind = VAL_KIND_SCALAR,
+                        .as = {.scalar = 0},
+                    }));
+                    scopes_pop(scopes);
+                    value_unref(stack.data[stack.size - 2]);
+                    stack.data[stack.size - 2] = stack.data[stack.size - 1];
+                    --stack.size;
+                    chunk = callstack.data[callstack.size - 1] + 1;
+                    --callstack.size;
+                } else {
+                    goto done;
+                }
+            }
+            continue;
         }
 
-        ++i;
+        ++chunk;
     }
 
 done:
@@ -265,6 +348,7 @@ done:
         value_unref(stack.data[i]);
     }
     LS_VECTOR_FREE(stack);
+    LS_VECTOR_FREE(callstack);
     return ok;
 #undef ERR
 #undef PROTECT

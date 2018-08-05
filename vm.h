@@ -9,8 +9,10 @@ struct Env;
 typedef enum {
     CMD_PRINT,
     CMD_LOAD_SCALAR,
+    CMD_LOAD_STR,
     CMD_LOAD,
     CMD_STORE,
+    CMD_LOCAL,
     CMD_LOAD_AT,
     CMD_STORE_AT,
     CMD_OP_UNARY,
@@ -19,7 +21,9 @@ typedef enum {
     CMD_MATRIX,
     CMD_JUMP,
     CMD_JUMP_UNLESS,
-    CMD_HALT,
+    CMD_FUNCTION,
+    CMD_RETURN,
+    CMD_EXIT,
 } Command;
 
 typedef struct {
@@ -28,7 +32,13 @@ typedef struct {
         // CMD_LOAD_SCALAR
         Scalar scalar;
 
-        // CMD_LOAD, CMD_STORE
+        // CMD_LOAD_STR
+        struct {
+            const char *start;
+            size_t size;
+        } str;
+
+        // CMD_LOAD, CMD_STORE, CMD_LOCAL
         struct {
             const char *start;
             size_t size;
@@ -53,7 +63,13 @@ typedef struct {
         } dims;
 
         // CMD_JUMP, CMD_JUMP_UNLESS
-        size_t pos;
+        ssize_t offset;
+
+        // CMD_FUNCTION
+        struct {
+            unsigned nargs;
+            ssize_t offset;
+        } func;
     } args;
 } Instr;
 

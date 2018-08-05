@@ -1,4 +1,4 @@
-#include "ht.h"
+#include "scopes.h"
 
 #include "libls/vector.h"
 #include "libls/string_.h"
@@ -11,12 +11,12 @@ typedef struct {
     Value value;
 } Entry;
 
-struct Ht {
+typedef struct {
     unsigned char rank;
     UIndex *buckets; /* nbuckets = 1 << rank */
     LS_VECTOR_OF(Entry) entries;
     LSString keys;
-};
+} Ht;
 
 static
 UIndex
@@ -30,17 +30,17 @@ get_hash(const char *key, size_t nkey)
     return ret;
 }
 
-Ht *
+static
+Ht
 ht_new(unsigned char rank)
 {
-    Ht *h = LS_XNEW(Ht, 1);
-    *h = (Ht) {
+    Ht h = {
         .rank = rank,
         .buckets = LS_XNEW(UIndex, ((UIndex) 1) << rank),
         .entries = LS_VECTOR_NEW(),
         .keys = LS_VECTOR_NEW(),
     };
-    memset(h->buckets, (unsigned char) -1, sizeof(UIndex) << rank);
+    memset(h.buckets, (unsigned char) -1, sizeof(UIndex) << rank);
     return h;
 }
 
@@ -90,12 +90,10 @@ new_entry(Ht *h, const char *key, size_t nkey, Value value)
     return h->entries.size - 1;
 }
 
-void
-ht_put(Ht *h, const char *key, size_t nkey, Value value)
+static
+bool
+ht_put(Ht *h, const char *key, size_t nkey, Value value, bool add_new)
 {
-    // We will insert it anyway.
-    value_ref(value);
-
     Entry *entries = h->entries.data;
     UIndex *buckets = h->buckets;
     char *keys = h->keys.data;
@@ -107,21 +105,26 @@ ht_put(Ht *h, const char *key, size_t nkey, Value value)
     for (UIndex bucket = base; ; ++bucket, bucket &= mask) {
         const UIndex index = buckets[bucket];
         if (index == (UIndex) -1) {
+            if (!add_new) {
+                return false;
+            }
+            value_ref(value);
             buckets[bucket] = new_entry(h, key, nkey, value);
             grow_if_needed(h);
-            return;
+            return true;
         } else {
             Entry e = entries[index];
             if (e.nkey == nkey && nkey && memcmp(keys + e.key_idx, key, nkey) == 0) {
-                // Old value is going to get replaced.
                 value_unref(e.value);
+                value_ref(value);
                 entries[index].value = value;
-                return;
+                return true;
             }
         }
     }
 }
 
+static
 bool
 ht_get(Ht *h, const char *key, size_t nkey, Value *result)
 {
@@ -154,6 +157,7 @@ ht_get(Ht *h, const char *key, size_t nkey, Value *result)
     return false;
 }
 
+static
 void
 ht_destroy(Ht *h)
 {
@@ -163,5 +167,70 @@ ht_destroy(Ht *h)
     }
     LS_VECTOR_FREE(h->entries);
     LS_VECTOR_FREE(h->keys);
-    free(h);
+}
+
+struct Scopes {
+    LS_VECTOR_OF(Ht) hts;
+};
+
+Scopes *
+scopes_new(void)
+{
+    Scopes *s = LS_XNEW(Scopes, 1);
+    *s = (Scopes) {
+        .hts = LS_VECTOR_NEW(),
+    };
+    LS_VECTOR_PUSH(s->hts, ht_new(6));
+    return s;
+}
+
+void
+scopes_push(Scopes *s)
+{
+    LS_VECTOR_PUSH(s->hts, ht_new(2));
+}
+
+void
+scopes_pop(Scopes *s)
+{
+    ht_destroy(&s->hts.data[--s->hts.size]);
+    assert(s->hts.size); // it is illegal to pop the global scope
+}
+
+void
+scopes_put_local(Scopes *s, const char *key, size_t nkey, Value value)
+{
+    ht_put(&s->hts.data[s->hts.size - 1], key, nkey, value, true);
+}
+
+void
+scopes_put(Scopes *s, const char *key, size_t nkey, Value value)
+{
+    for (size_t i = s->hts.size - 1; i; --i) {
+        if (ht_put(&s->hts.data[i], key, nkey, value, false)) {
+            return;
+        }
+    }
+    ht_put(&s->hts.data[0], key, nkey, value, true);
+}
+
+bool
+scopes_get(Scopes *s, const char *key, size_t nkey, Value *result)
+{
+    for (size_t i = s->hts.size - 1; i != (size_t) -1; --i) {
+        if (ht_get(&s->hts.data[i], key, nkey, result)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void
+scopes_destroy(Scopes *s)
+{
+    for (size_t i = 0; i < s->hts.size; ++i) {
+        ht_destroy(&s->hts.data[i]);
+    }
+    LS_VECTOR_FREE(s->hts);
+    free(s);
 }
