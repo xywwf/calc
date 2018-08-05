@@ -9,16 +9,14 @@ void
 gcobject_destroy(Value v)
 {
     switch (v.kind) {
-        case VAL_KIND_FUNC:
-            func_destroy((Func *) v.as.gcobj);
-            // fallthrough
-        case VAL_KIND_MATRIX:
-        case VAL_KIND_STR:
-            free(v.as.gcobj);
-            break;
-        default:
-            break;
+    case VAL_KIND_FUNC:
+        func_destroy((Func *) v.as.gcobj);
+        break;
+    default:
+        break;
     }
+    // Since this function is called, /v/ *is* a garbage-collected object.
+    free(v.as.gcobj);
 }
 
 void
