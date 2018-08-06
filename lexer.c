@@ -138,7 +138,7 @@ lexer_next(Lexer *x)
         r.kind = LEX_KIND_STR;
         do {
             ++x->cur;
-            if (x->cur == x->last) {
+            if (x->cur == x->last || *x->cur == '\n') {
                 return (Lexem) {
                     .kind = LEX_KIND_ERROR,
                     .data = "unterminated string",

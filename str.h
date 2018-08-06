@@ -13,6 +13,9 @@ typedef struct {
 Str *
 str_new(const char *buf, size_t nbuf);
 
+Str *
+str_new_unescape(const char *buf, size_t nbuf);
+
 bool
 str_eq(Str *a, Str *b);
 

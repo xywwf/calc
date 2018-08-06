@@ -14,6 +14,41 @@ str_new(const char *buf, size_t nbuf)
     return s;
 }
 
+Str *
+str_new_unescape(const char *buf, size_t nbuf)
+{
+    Str *s = ls_xmalloc(sizeof(Str) + nbuf, 1);
+    s->gchdr.nrefs = 1;
+
+    char *ptr = s->data;
+    for (const char *t; nbuf && (t = memchr(buf, '\\', nbuf));) {
+        const size_t nseg = t - buf;
+        if (nseg) {
+            memcpy(ptr, buf, nseg);
+            ptr += nseg;
+        }
+        buf += nseg + 1;
+        nbuf -= nseg + 1;
+        if (!nbuf) {
+            break;
+        }
+        switch (*buf) {
+            case 'n':  *ptr++ = '\n'; break;
+            case 'q':  *ptr++ = '"';  break;
+            case '\\': *ptr++ = '\\'; break;
+        }
+        ++buf;
+        --nbuf;
+    }
+    if (nbuf) {
+        memcpy(ptr, buf, nbuf);
+        ptr += nbuf;
+    }
+
+    s->ndata = ptr - s->data;
+    return ls_xrealloc(s, sizeof(Str) + s->ndata, 1);
+}
+
 bool
 str_eq(Str *a, Str *b)
 {

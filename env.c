@@ -85,7 +85,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
 
         case CMD_LOAD_STR:
             {
-                Str *s = str_new(in.args.str.start + 1, in.args.str.size - 2);
+                Str *s = str_new_unescape(in.args.str.start + 1, in.args.str.size - 2);
                 LS_VECTOR_PUSH(stack, ((Value) {
                     .kind = VAL_KIND_STR,
                     .as.gcobj = (GcObject *) s,
