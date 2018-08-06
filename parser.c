@@ -377,6 +377,21 @@ reverse_chunk(Instr *chunk, size_t nchunk)
     }
 }
 
+static inline
+StopTokenKind
+end_of_stmt(Parser *p)
+{
+    Lexem m = lexer_next(p->lex);
+    switch (m.kind) {
+    case LEX_KIND_SEMICOLON:
+        return STOP_TOK_SEMICOLON;
+    case LEX_KIND_EOF:
+        return STOP_TOK_EOF;
+    default:
+        throw_at(p, m, "expected end of statement");
+    }
+}
+
 StopTokenKind
 stmt(Parser *p)
 {
@@ -405,16 +420,7 @@ stmt(Parser *p)
             }
             LS_VECTOR_PUSH(p->fixup_cycle.data[p->fixup_cycle.size - 1], p->chunk.size);
             INSTR_N(p, CMD_JUMP);
-
-            Lexem m = lexer_next(p->lex);
-            switch (m.kind) {
-            case LEX_KIND_SEMICOLON:
-                return STOP_TOK_SEMICOLON;
-            case LEX_KIND_EOF:
-                return STOP_TOK_EOF;
-            default:
-                throw_at(p, m, "expected end of statement");
-            }
+            return end_of_stmt(p);
         }
         break;
 
@@ -425,15 +431,7 @@ stmt(Parser *p)
             }
             INSTR(p, CMD_JUMP, .offset =
                 (ssize_t) p->cont_cycle.data[p->cont_cycle.size - 1] - p->chunk.size + 1);
-            Lexem m = lexer_next(p->lex);
-            switch (m.kind) {
-            case LEX_KIND_SEMICOLON:
-                return STOP_TOK_SEMICOLON;
-            case LEX_KIND_EOF:
-                return STOP_TOK_EOF;
-            default:
-                throw_at(p, m, "expected end of statement");
-            }
+            return end_of_stmt(p);
         }
         break;
 
@@ -510,15 +508,7 @@ stmt(Parser *p)
 
             p->expr_end = false;
 
-            Lexem m = lexer_next(p->lex);
-            switch (m.kind) {
-            case LEX_KIND_SEMICOLON:
-                return STOP_TOK_SEMICOLON;
-            case LEX_KIND_EOF:
-                return STOP_TOK_EOF;
-            default:
-                throw_at(p, m, "expected end of statement");
-            }
+            return end_of_stmt(p);
         }
         break;
 
@@ -560,30 +550,14 @@ stmt(Parser *p)
 
             p->expr_end = false;
 
-            Lexem m = lexer_next(p->lex);
-            switch (m.kind) {
-            case LEX_KIND_SEMICOLON:
-                return STOP_TOK_SEMICOLON;
-            case LEX_KIND_EOF:
-                return STOP_TOK_EOF;
-            default:
-                throw_at(p, m, "expected end of statement");
-            }
+            return end_of_stmt(p);
         }
         break;
 
     case LEX_KIND_EXIT:
         {
             INSTR_N(p, CMD_EXIT);
-            Lexem m = lexer_next(p->lex);
-            switch (m.kind) {
-            case LEX_KIND_SEMICOLON:
-                return STOP_TOK_SEMICOLON;
-            case LEX_KIND_EOF:
-                return STOP_TOK_EOF;
-            default:
-                throw_at(p, m, "expected end of statement");
-            }
+            return end_of_stmt(p);
         }
         break;
 
@@ -627,7 +601,7 @@ stmt(Parser *p)
                 Lexem m = lexer_next(p->lex);
                 if (m.kind == LEX_KIND_IDENT) {
                     if (!ident_expected && nargs != 0) {
-                        throw_at(p, m, "wtf");
+                        throw_at(p, m, "expected ',' or ')'");
                     }
                     ++nargs;
                     INSTR(p, CMD_LOCAL, .varname = {.start = m.start, .size = m.size});
@@ -636,11 +610,11 @@ stmt(Parser *p)
                     ident_expected = true;
                 } else if (m.kind == LEX_KIND_RBRACE) {
                     if (ident_expected) {
-                        throw_at(p, m, "wtf");
+                        throw_at(p, m, "expected parameter name");
                     }
                     break;
                 } else {
-                    throw_at(p, m, "wtf");
+                    throw_at(p, m, "expected either argument name or ',' or ')'");
                 }
             }
             reverse_chunk(p->chunk.data + fu_instr + 1, nargs);
@@ -662,15 +636,7 @@ stmt(Parser *p)
 
             INSTR(p, CMD_STORE, .varname = {.start = funame.start, .size = funame.size});
 
-            Lexem m2 = lexer_next(p->lex);
-            switch (m2.kind) {
-            case LEX_KIND_SEMICOLON:
-                return STOP_TOK_SEMICOLON;
-            case LEX_KIND_EOF:
-                return STOP_TOK_EOF;
-            default:
-                throw_at(p, m2, "expected end of statement");
-            }
+            return end_of_stmt(p);
         }
         break;
 
