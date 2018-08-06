@@ -6,6 +6,7 @@
 struct Env;
 
 typedef enum {
+    VAL_KIND_NIL,
     VAL_KIND_SCALAR,
     VAL_KIND_MATRIX,
     VAL_KIND_CFUNC,
@@ -18,6 +19,8 @@ const char *
 value_kindname(ValueKind kind)
 {
     switch (kind) {
+    case VAL_KIND_NIL:
+        return "nil";
     case VAL_KIND_SCALAR:
         return "scalar";
     case VAL_KIND_MATRIX:

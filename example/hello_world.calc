@@ -1,0 +1,5 @@
+:fu greet(whom)
+    Cat("Hello, ", whom, "!")
+:end
+
+greet("world")

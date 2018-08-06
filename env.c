@@ -314,8 +314,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                 goto done;
             }
             LS_VECTOR_PUSH(stack, ((Value) {
-                .kind = VAL_KIND_SCALAR,
-                .as = {.scalar = 0},
+                .kind = VAL_KIND_NIL,
             }));
             // fall through
         case CMD_RETURN:

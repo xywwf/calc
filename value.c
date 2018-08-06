@@ -23,6 +23,9 @@ void
 value_print(Value v)
 {
     switch (v.kind) {
+    case VAL_KIND_NIL:
+        /* do not print anything */
+        break;
     case VAL_KIND_SCALAR:
         printf("%.15g\n", v.as.scalar);
         break;
@@ -60,6 +63,8 @@ bool
 value_is_truthy(Value v)
 {
     switch (v.kind) {
+    case VAL_KIND_NIL:
+        return false;
     case VAL_KIND_SCALAR:
         return !!v.as.scalar;
     case VAL_KIND_MATRIX:

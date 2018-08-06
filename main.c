@@ -195,6 +195,8 @@ X_eq(Env *e, Value a, Value b)
         return SCALAR(0);
     }
     switch (a.kind) {
+    case VAL_KIND_NIL:
+        return SCALAR(1);
     case VAL_KIND_SCALAR:
         return SCALAR(a.as.scalar == b.as.scalar);
     case VAL_KIND_MATRIX:
@@ -229,9 +231,11 @@ X_ne(Env *e, Value a, Value b)
 {
     (void) e;
     if (a.kind != b.kind) {
-        return SCALAR(0);
+        return SCALAR(1);
     }
     switch (a.kind) {
+    case VAL_KIND_NIL:
+        return SCALAR(0);
     case VAL_KIND_SCALAR:
         return SCALAR(a.as.scalar != b.as.scalar);
     case VAL_KIND_MATRIX:
@@ -400,7 +404,71 @@ X_DisAsm(Env *e, const Value *args, unsigned nargs)
     }
     Func *f = (Func *) args[0].as.gcobj;
     disasm_print(f->chunk, f->nchunk);
-    return SCALAR(0);
+    return (Value) {.kind = VAL_KIND_NIL};
+}
+
+static
+Value
+X_Kind(Env *e, const Value *args, unsigned nargs)
+{
+    if (nargs != 1) {
+        env_throw(e, "'Kind' expects exactly one argument");
+    }
+    const char *kind = value_kindname(args[0].kind);
+    Str *s = str_new(kind, strlen(kind));
+    return (Value) {.kind = VAL_KIND_STR, .as = {.gcobj = (GcObject *) s}};
+}
+
+static
+Value
+X_Cat(Env *e, const Value *args, unsigned nargs)
+{
+    (void) e;
+    LSString buf = LS_VECTOR_NEW();
+    for (unsigned i = 0; i < nargs; ++i) {
+        switch (args[i].kind) {
+        case VAL_KIND_NIL:
+            ls_string_append_s(&buf, "nil");
+            break;
+        case VAL_KIND_SCALAR:
+            ls_string_append_f(&buf, "%.15g", args[i].as.scalar);
+            break;
+        case VAL_KIND_STR:
+            {
+                Str *s = (Str *) args[i].as.gcobj;
+                ls_string_append_b(&buf, s->data, s->ndata);
+            }
+            break;
+        case VAL_KIND_MATRIX:
+            {
+                Matrix *m = ASMAT(args[i]);
+                const unsigned width = m->width;
+                const size_t n = (size_t) m->height * width;
+                ls_string_append_c(&buf, '[');
+                for (size_t i = 0; i < n; ++i) {
+                    if (i) {
+                        ls_string_append_c(&buf, ' ');
+                    }
+                    ls_string_append_f(&buf, "%.15g", m->elems[i]);
+                    const size_t j = i + 1;
+                    if (j != n) {
+                         ls_string_append_c(&buf, j % width ? ',' : ';');
+                    }
+                }
+                ls_string_append_c(&buf, ']');
+            }
+            break;
+        case VAL_KIND_FUNC:
+            ls_string_append_f(&buf, "<function %p>", (void *) args[0].as.gcobj);
+            break;
+        case VAL_KIND_CFUNC:
+            ls_string_append_f(&buf, "<built-in function %p>", *(void **) &args[0].as.cfunc);
+            break;
+        }
+    }
+    Str *s = str_new(buf.data, buf.size);
+    LS_VECTOR_FREE(buf);
+    return (Value) {.kind = VAL_KIND_STR, .as = {.gcobj = (GcObject *) s}};
 }
 
 static
@@ -565,6 +633,8 @@ main(int argc, char **argv)
     scopes_put(scopes, NAME("Dim"),   CFUNC(X_Dim));
     scopes_put(scopes, NAME("Trans"), CFUNC(X_Transpose));
     scopes_put(scopes, NAME("DisAsm"), CFUNC(X_DisAsm));
+    scopes_put(scopes, NAME("Kind"),   CFUNC(X_Kind));
+    scopes_put(scopes, NAME("Cat"),   CFUNC(X_Cat));
 
     scopes_put(scopes, NAME("pi"), SCALAR(acos(-1)));
 
