@@ -36,6 +36,26 @@ fixup_stack_last_push(FixupStack *fs, size_t fixup_pos)
     LS_VECTOR_PUSH(fs->data[fs->size - 1], fixup_pos);
 }
 
+typedef LS_VECTOR_OF(Instr *) TempChunkStack;
+
+static
+void
+temp_chunk_stack_clear(TempChunkStack *tcs)
+{
+    for (size_t i = 0; i < tcs->size; ++i) {
+        free(tcs->data[i]);
+    }
+    LS_VECTOR_CLEAR(*tcs);
+}
+
+static
+void
+temp_chunk_stack_free(TempChunkStack tcs)
+{
+    temp_chunk_stack_clear(&tcs);
+    LS_VECTOR_FREE(tcs);
+}
+
 struct Parser {
     Lexer *lex;
     bool expr_end;
@@ -44,6 +64,7 @@ struct Parser {
     FixupStack fixup_cond;
     FixupStack fixup_loop_break;
     FixupStack fixup_loop_next;
+    TempChunkStack temp_chunks;
     jmp_buf err_handler;
     ParserError err;
 };
@@ -58,6 +79,7 @@ parser_new(Lexer *lex)
         .fixup_cond = LS_VECTOR_NEW(),
         .fixup_loop_break = LS_VECTOR_NEW(),
         .fixup_loop_next = LS_VECTOR_NEW(),
+        .temp_chunks = LS_VECTOR_NEW(),
     };
     return p;
 }
@@ -71,6 +93,7 @@ parser_reset(Parser *p)
     fixup_stack_clear(&p->fixup_cond);
     fixup_stack_clear(&p->fixup_loop_break);
     fixup_stack_clear(&p->fixup_loop_next);
+    temp_chunk_stack_clear(&p->temp_chunks);
 }
 
 typedef enum {
@@ -603,8 +626,8 @@ stmt(Parser *p)
             INSTR_N(p, CMD_JUMP_UNLESS);
 
             // assignment
-            Instr *third;
-            size_t nthird;
+            Instr *achunk;
+            size_t nachunk;
             {
                 const size_t old_size = p->chunk.size;
                 if (expr(p, -1) != STOP_TOK_DO) {
@@ -612,8 +635,10 @@ stmt(Parser *p)
                     throw_at(p, lexer_next(p->lex), "expected ':do'");
                 }
                 INSTR(p, CMD_LOCAL, .varname = {.start = var.start, .size = var.size});
-                nthird = p->chunk.size - old_size;
-                third = ls_xmemdup(p->chunk.data + old_size, sizeof(Instr) * nthird);
+
+                nachunk = p->chunk.size - old_size;
+                achunk = ls_xmemdup(p->chunk.data + old_size, sizeof(Instr) * nachunk);
+                LS_VECTOR_PUSH(p->temp_chunks, achunk);
                 p->chunk.size = old_size;
             }
 
@@ -627,10 +652,11 @@ stmt(Parser *p)
 
             const size_t cont_instr = p->chunk.size;
 
-            for (size_t i = 0; i < nthird; ++i) {
-                LS_VECTOR_PUSH(p->chunk, third[i]);
+            for (size_t i = 0; i < nachunk; ++i) {
+                LS_VECTOR_PUSH(p->chunk, achunk[i]);
             }
-            free(third);
+            free(achunk);
+            --p->temp_chunks.size;
 
             INSTR(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
 
@@ -836,5 +862,6 @@ parser_destroy(Parser *p)
     fixup_stack_free(p->fixup_cond);
     fixup_stack_free(p->fixup_loop_break);
     fixup_stack_free(p->fixup_loop_next);
+    temp_chunk_stack_free(p->temp_chunks);
     free(p);
 }

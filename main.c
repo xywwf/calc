@@ -383,6 +383,7 @@ static
 Value
 X_Rand(Env *e, const Value *args, unsigned nargs)
 {
+    // Not thread-safe. Nobody cares.
     enum { NBUF = 2048 };
     static unsigned buf[NBUF];
     static unsigned *cur = buf + NBUF;
