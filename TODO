@@ -1,6 +1,3 @@
-- speed up Rand() using buffering.
-- implement some kind of :for loop
-- local functions/lambdas
 - document syntax
 - add support for vector/matrix reallocation?
 - add support for mpfr/biginteger/bigrational/bigdecimal arithmetics?
