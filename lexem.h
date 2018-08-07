@@ -10,6 +10,7 @@ typedef enum {
     LEX_KIND_OP,
     LEX_KIND_AMBIG_OP,
     LEX_KIND_NUM,
+    LEX_KIND_STR,
     LEX_KIND_IDENT,
     LEX_KIND_LBRACE,
     LEX_KIND_RBRACE,
@@ -19,12 +20,14 @@ typedef enum {
     LEX_KIND_SEMICOLON,
     LEX_KIND_EQ,
     LEX_KIND_COLON_EQ,
+    LEX_KIND_BAR,
 
     LEX_KIND_IF,
     LEX_KIND_THEN,
     LEX_KIND_ELIF,
     LEX_KIND_ELSE,
     LEX_KIND_WHILE,
+    LEX_KIND_FOR,
     LEX_KIND_DO,
     LEX_KIND_BREAK,
     LEX_KIND_NEXT,
@@ -32,8 +35,6 @@ typedef enum {
     LEX_KIND_RETURN,
     LEX_KIND_EXIT,
     LEX_KIND_END,
-
-    LEX_KIND_STR,
 } LexemKind;
 
 typedef struct {

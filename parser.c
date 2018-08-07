@@ -42,8 +42,8 @@ struct Parser {
     LS_VECTOR_OF(Instr) chunk;
     size_t func_level;
     FixupStack fixup_cond;
-    FixupStack fixup_cycle;
-    LS_VECTOR_OF(size_t) cont_cycle;
+    FixupStack fixup_loop_break;
+    FixupStack fixup_loop_next;
     jmp_buf err_handler;
     ParserError err;
 };
@@ -56,8 +56,8 @@ parser_new(Lexer *lex)
         .lex = lex,
         .chunk = LS_VECTOR_NEW(),
         .fixup_cond = LS_VECTOR_NEW(),
-        .fixup_cycle = LS_VECTOR_NEW(),
-        .cont_cycle = LS_VECTOR_NEW(),
+        .fixup_loop_break = LS_VECTOR_NEW(),
+        .fixup_loop_next = LS_VECTOR_NEW(),
     };
     return p;
 }
@@ -69,8 +69,8 @@ parser_reset(Parser *p)
     LS_VECTOR_CLEAR(p->chunk);
     p->func_level = 0;
     fixup_stack_clear(&p->fixup_cond);
-    fixup_stack_clear(&p->fixup_cycle);
-    LS_VECTOR_CLEAR(p->cont_cycle);
+    fixup_stack_clear(&p->fixup_loop_break);
+    fixup_stack_clear(&p->fixup_loop_next);
 }
 
 typedef enum {
@@ -79,6 +79,7 @@ typedef enum {
     STOP_TOK_RBRACKET,
     STOP_TOK_COMMA,
     STOP_TOK_SEMICOLON,
+    STOP_TOK_BAR,
     STOP_TOK_EQ,
     STOP_TOK_COLON_EQ,
 
@@ -157,6 +158,7 @@ expr(Parser *p, int min_priority)
     while (1) {
         lexer_mark(p->lex);
         Lexem m = lexer_next(p->lex);
+
         switch (m.kind) {
 
         case LEX_KIND_NUM:
@@ -327,6 +329,11 @@ expr(Parser *p, int min_priority)
             p->expr_end = false;
             return STOP_TOK_SEMICOLON;
 
+        case LEX_KIND_BAR:
+            AFTER_EXPR(p, m);
+            p->expr_end = false;
+            return STOP_TOK_BAR;
+
         case LEX_KIND_ERROR:
             throw_at(p, m, m.data);
             break;
@@ -361,6 +368,7 @@ expr(Parser *p, int min_priority)
         case LEX_KIND_RETURN:
         case LEX_KIND_EXIT:
         case LEX_KIND_END:
+        case LEX_KIND_FOR:
             return STOP_TOK_NONSENSE;
         }
     }
@@ -415,10 +423,10 @@ stmt(Parser *p)
 
     case LEX_KIND_BREAK:
         {
-            if (!p->fixup_cycle.size) {
+            if (!p->fixup_loop_break.size) {
                 throw_at(p, m, "':break' outside of a cycle");
             }
-            LS_VECTOR_PUSH(p->fixup_cycle.data[p->fixup_cycle.size - 1], p->chunk.size);
+            fixup_stack_last_push(&p->fixup_loop_break, p->chunk.size);
             INSTR_N(p, CMD_JUMP);
             return end_of_stmt(p);
         }
@@ -426,11 +434,11 @@ stmt(Parser *p)
 
     case LEX_KIND_NEXT:
         {
-            if (!p->cont_cycle.size) {
+            if (!p->fixup_loop_next.size) {
                 throw_at(p, m, "':next' outside of a cycle");
             }
-            INSTR(p, CMD_JUMP, .offset =
-                (ssize_t) p->cont_cycle.data[p->cont_cycle.size - 1] - p->chunk.size + 1);
+            fixup_stack_last_push(&p->fixup_loop_next, p->chunk.size);
+            INSTR_N(p, CMD_JUMP);
             return end_of_stmt(p);
         }
         break;
@@ -516,9 +524,8 @@ stmt(Parser *p)
         {
             const size_t check_instr = p->chunk.size;
 
-            LS_VECTOR_PUSH(p->cont_cycle, check_instr);
-
-            LS_VECTOR_PUSH(p->fixup_cycle, (FixupList) LS_VECTOR_NEW());
+            LS_VECTOR_PUSH(p->fixup_loop_break, (FixupList) LS_VECTOR_NEW());
+            LS_VECTOR_PUSH(p->fixup_loop_next,  (FixupList) LS_VECTOR_NEW());
 
             if (expr(p, -1) != STOP_TOK_DO) {
                 lexer_rollback(p->lex);
@@ -539,20 +546,121 @@ stmt(Parser *p)
 
             const size_t end_pos = p->chunk.size;
             p->chunk.data[jump_instr].args.offset = end_pos - jump_instr;
-            FixupList fl = p->fixup_cycle.data[p->fixup_cycle.size - 1];
-            for (size_t i = 0; i < fl.size; ++i) {
-                const size_t at = fl.data[i];
-                p->chunk.data[at].args.offset = end_pos - at;
+            {
+                FixupList brk = p->fixup_loop_break.data[p->fixup_loop_break.size - 1];
+                for (size_t i = 0; i < brk.size; ++i) {
+                    const size_t at = brk.data[i];
+                    p->chunk.data[at].args.offset = end_pos - at;
+                }
+                LS_VECTOR_FREE(brk);
+                --p->fixup_loop_break.size;
             }
-            LS_VECTOR_FREE(fl);
-            --p->fixup_cycle.size;
-            --p->cont_cycle.size;
+            {
+                FixupList nxt = p->fixup_loop_next.data[p->fixup_loop_next.size - 1];
+                for (size_t i = 0; i < nxt.size; ++i) {
+                    const size_t at = nxt.data[i];
+                    p->chunk.data[at].args.offset = (ssize_t) jump_instr - at - 1;
+                }
+                LS_VECTOR_FREE(nxt);
+                --p->fixup_loop_next.size;
+            }
 
             p->expr_end = false;
 
             return end_of_stmt(p);
         }
         break;
+
+    case LEX_KIND_FOR:
+        {
+            Lexem var = lexer_next(p->lex);
+            if (var.kind != LEX_KIND_IDENT) {
+                throw_at(p, var, "expected identifier");
+            }
+            Lexem bar = lexer_next(p->lex);
+            if (bar.kind != LEX_KIND_BAR) {
+                throw_at(p, var, "expected '|'");
+            }
+
+            LS_VECTOR_PUSH(p->fixup_loop_break, (FixupList) LS_VECTOR_NEW());
+            LS_VECTOR_PUSH(p->fixup_loop_next,  (FixupList) LS_VECTOR_NEW());
+
+            // initial value
+            if (expr(p, -1) != STOP_TOK_SEMICOLON) {
+                lexer_rollback(p->lex);
+                throw_at(p, lexer_next(p->lex), "expected ';'");
+            }
+            INSTR(p, CMD_LOCAL, .varname = {.start = var.start, .size = var.size});
+
+            // loop condition
+            const size_t check_instr = p->chunk.size;
+            if (expr(p, -1) != STOP_TOK_SEMICOLON) {
+                lexer_rollback(p->lex);
+                throw_at(p, lexer_next(p->lex), "expected ';'");
+            }
+
+            const size_t jump_instr = p->chunk.size;
+            INSTR_N(p, CMD_JUMP_UNLESS);
+
+            // assignment
+            Instr *third;
+            size_t nthird;
+            {
+                const size_t old_size = p->chunk.size;
+                if (expr(p, -1) != STOP_TOK_DO) {
+                    lexer_rollback(p->lex);
+                    throw_at(p, lexer_next(p->lex), "expected ':do'");
+                }
+                INSTR(p, CMD_LOCAL, .varname = {.start = var.start, .size = var.size});
+                nthird = p->chunk.size - old_size;
+                third = ls_xmemdup(p->chunk.data + old_size, sizeof(Instr) * nthird);
+                p->chunk.size = old_size;
+            }
+
+            // loop body
+            StopTokenKind s;
+            while ((s = stmt(p)) == STOP_TOK_SEMICOLON) {}
+            if (s != STOP_TOK_END) {
+                lexer_rollback(p->lex);
+                throw_at(p, lexer_next(p->lex), "expected ':end'");
+            }
+
+            const size_t cont_instr = p->chunk.size;
+
+            for (size_t i = 0; i < nthird; ++i) {
+                LS_VECTOR_PUSH(p->chunk, third[i]);
+            }
+            free(third);
+
+            INSTR(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
+
+            const size_t end_pos = p->chunk.size;
+            p->chunk.data[jump_instr].args.offset = end_pos - jump_instr;
+            {
+                FixupList brk = p->fixup_loop_break.data[p->fixup_loop_break.size - 1];
+                for (size_t i = 0; i < brk.size; ++i) {
+                    const size_t at = brk.data[i];
+                    p->chunk.data[at].args.offset = end_pos - at;
+                }
+                LS_VECTOR_FREE(brk);
+                --p->fixup_loop_break.size;
+            }
+            {
+                FixupList nxt = p->fixup_loop_next.data[p->fixup_loop_next.size - 1];
+                for (size_t i = 0; i < nxt.size; ++i) {
+                    const size_t at = nxt.data[i];
+                    p->chunk.data[at].args.offset = cont_instr - at;
+                }
+                LS_VECTOR_FREE(nxt);
+                --p->fixup_loop_next.size;
+            }
+
+            p->expr_end = false;
+
+            return end_of_stmt(p);
+        }
+        break;
+
 
     case LEX_KIND_EXIT:
         {
@@ -607,6 +715,9 @@ stmt(Parser *p)
                     INSTR(p, CMD_LOCAL, .varname = {.start = m.start, .size = m.size});
                     ident_expected = false;
                 } else if (m.kind == LEX_KIND_COMMA) {
+                    if (nargs == 0) {
+                        throw_at(p, m, "expected parameter name or ')'");
+                    }
                     ident_expected = true;
                 } else if (m.kind == LEX_KIND_RBRACE) {
                     if (ident_expected) {
@@ -614,7 +725,7 @@ stmt(Parser *p)
                     }
                     break;
                 } else {
-                    throw_at(p, m, "expected either argument name or ',' or ')'");
+                    throw_at(p, m, "expected either parameter name or ',' or ')'");
                 }
             }
             reverse_chunk(p->chunk.data + fu_instr + 1, nargs);
@@ -723,7 +834,7 @@ parser_destroy(Parser *p)
 {
     LS_VECTOR_FREE(p->chunk);
     fixup_stack_free(p->fixup_cond);
-    fixup_stack_free(p->fixup_cycle);
-    LS_VECTOR_FREE(p->cont_cycle);
+    fixup_stack_free(p->fixup_loop_break);
+    fixup_stack_free(p->fixup_loop_next);
     free(p);
 }

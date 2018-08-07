@@ -1,3 +1,4 @@
+HEADERS := $(wildcard *.h libls/*.h)
 SOURCES := $(wildcard *.c libls/*.c)
 OBJECTS := $(patsubst %.c,%.o,$(SOURCES))
 PROGRAM := main
@@ -11,7 +12,7 @@ all: $(PROGRAM)
 $(PROGRAM): $(OBJECTS)
 	$(CC) $(LDFLAGS) $(OBJECTS) $(LOADLIBES) $(LDLIBS) -o $@
 
-%.o: %.c
+%.o: %.c $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 clean:

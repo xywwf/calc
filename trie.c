@@ -85,27 +85,6 @@ trie_greedy_lookup(Trie *t, const char *buf, size_t nbuf, void **data, size_t *l
     return kind;
 }
 
-LexemKind
-trie_fixed_lookup(Trie *t, const char *key, size_t nkey, void **data)
-{
-    UIndex p = 0;
-    for (size_t i = 0; i < nkey; ++i) {
-        const unsigned char c = key[i];
-        if (c >= 128) {
-            return LEX_KIND_ERROR;
-        }
-        p = t->nodes[p].children[c];
-        if (!p) {
-            return LEX_KIND_ERROR;
-        }
-    }
-    const LexemKind kind = t->nodes[p].kind;
-    if (kind != LEX_KIND_ERROR) {
-        *data = t->nodes[p].data;
-    }
-    return kind;
-}
-
 void
 trie_traverse(Trie *t, void (*on_elem)(void *userdata, LexemKind kind, void *data), void *userdata)
 {

@@ -81,8 +81,9 @@ value_is_truthy(Value v)
         break;
     case VAL_KIND_CFUNC:
     case VAL_KIND_FUNC:
-    case VAL_KIND_STR:
         return true;
+    case VAL_KIND_STR:
+        return ((Str *) v.as.gcobj)->ndata;
     }
     LS_UNREACHABLE();
 }

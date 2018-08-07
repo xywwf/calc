@@ -319,21 +319,8 @@ DECL1(atan)
 DECL1(exp)
 DECL1(log)
 DECL1(floor)
+DECL1(trunc)
 DECL1(ceil)
-
-static
-Value
-X_sum(Env *e, const Value *args, unsigned nargs)
-{
-    Scalar r = 0;
-    for (unsigned i = 0; i < nargs; ++i) {
-        if (args[i].kind != VAL_KIND_SCALAR) {
-            env_throw(e, "'sum' can only be applied to scalars");
-        }
-        r += args[i].as.scalar;
-    }
-    return SCALAR(r);
-}
 
 static
 Value
@@ -390,6 +377,39 @@ X_Transpose(Env *e, const Value *args, unsigned nargs)
         }
     }
     return MAT(y);
+}
+
+static
+Value
+X_Rand(Env *e, const Value *args, unsigned nargs)
+{
+    enum { NBUF = 2048 };
+    static unsigned buf[NBUF];
+    static unsigned *cur = buf + NBUF;
+    static int fd = -1;
+    if (fd == -1) {
+        fd = open("/dev/urandom", O_RDONLY);
+        if (fd < 0) {
+            perror("open: /dev/urandom");
+            abort();
+        }
+    }
+
+    (void) e;
+    (void) args;
+    if (nargs != 0) {
+        env_throw(e, "'Rand' takes no arguments");
+    }
+
+    if (cur == buf + NBUF) {
+        if (read(fd, buf, sizeof(buf)) != sizeof(buf)) {
+            env_throw(e, "cannot read from /dev/urandom");
+        }
+        cur = buf;
+    }
+
+    unsigned u = *cur++;
+    return SCALAR(u / (Scalar) UINT32_MAX);
 }
 
 static
@@ -599,12 +619,14 @@ main(int argc, char **argv)
 
     trie_insert(ops, "=",  LEX_KIND_EQ,       NULL);
     trie_insert(ops, ":=", LEX_KIND_COLON_EQ, NULL);
+    trie_insert(ops, "|",  LEX_KIND_BAR,      NULL);
 
     trie_insert(ops, ":if",     LEX_KIND_IF,     NULL);
     trie_insert(ops, ":then",   LEX_KIND_THEN,   NULL);
     trie_insert(ops, ":elif",   LEX_KIND_ELIF,   NULL);
     trie_insert(ops, ":else",   LEX_KIND_ELSE,   NULL);
     trie_insert(ops, ":while",  LEX_KIND_WHILE,  NULL);
+    trie_insert(ops, ":for",    LEX_KIND_FOR,    NULL);
     trie_insert(ops, ":do",     LEX_KIND_DO,     NULL);
     trie_insert(ops, ":break",  LEX_KIND_BREAK,  NULL);
     trie_insert(ops, ":next",   LEX_KIND_NEXT,   NULL);
@@ -625,16 +647,17 @@ main(int argc, char **argv)
     scopes_put(scopes, NAME("atan"),  CFUNC(X_atan));
     scopes_put(scopes, NAME("ln"),    CFUNC(X_log));
     scopes_put(scopes, NAME("exp"),   CFUNC(X_exp));
+    scopes_put(scopes, NAME("trunc"), CFUNC(X_trunc));
     scopes_put(scopes, NAME("floor"), CFUNC(X_floor));
     scopes_put(scopes, NAME("ceil"),  CFUNC(X_ceil));
 
-    scopes_put(scopes, NAME("sum"),   CFUNC(X_sum));
     scopes_put(scopes, NAME("Mat"),   CFUNC(X_Mat));
     scopes_put(scopes, NAME("Dim"),   CFUNC(X_Dim));
     scopes_put(scopes, NAME("Trans"), CFUNC(X_Transpose));
     scopes_put(scopes, NAME("DisAsm"), CFUNC(X_DisAsm));
     scopes_put(scopes, NAME("Kind"),   CFUNC(X_Kind));
     scopes_put(scopes, NAME("Cat"),   CFUNC(X_Cat));
+    scopes_put(scopes, NAME("Rand"),   CFUNC(X_Rand));
 
     scopes_put(scopes, NAME("pi"), SCALAR(acos(-1)));
 
