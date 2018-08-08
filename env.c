@@ -42,6 +42,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
 {
     (void) nchunk;
     Scopes *scopes = e->scopes;
+    scopes_push(scopes); // chunk-local scope
     bool ok = true;
     LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
     LS_VECTOR_OF(const Instr *) callstack = LS_VECTOR_NEW();
@@ -316,6 +317,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
     }
 
 done:
+    scopes_pop(scopes); // pop the chunk-local scope
     if (ok) {
         assert(!stack.size);
         assert(!callstack.size);
