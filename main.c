@@ -49,11 +49,11 @@ X_uminus(Env *e, Value a)
 
 static
 Value
-X_bminus(Env *e, Value subtrahend, Value minuend)
+X_bminus(Env *e, Value minuend, Value subtrahend)
 {
-    if (subtrahend.kind == VAL_KIND_MATRIX && minuend.kind == VAL_KIND_MATRIX) {
-        Matrix *x = AS_MAT(subtrahend);
-        Matrix *y = AS_MAT(minuend);
+    if (minuend.kind == VAL_KIND_MATRIX && subtrahend.kind == VAL_KIND_MATRIX) {
+        Matrix *x = AS_MAT(minuend);
+        Matrix *y = AS_MAT(subtrahend);
         if (!eqdim(x, y)) {
             env_throw(e, "matrices unconformable for subtraction");
         }
@@ -63,8 +63,8 @@ X_bminus(Env *e, Value subtrahend, Value minuend)
             z->elems[i] = x->elems[i] - y->elems[i];
         }
         return MK_MAT(z);
-    } else if (subtrahend.kind == VAL_KIND_SCALAR && minuend.kind == VAL_KIND_SCALAR) {
-        return MK_SCL(subtrahend.as.scalar - minuend.as.scalar);
+    } else if (minuend.kind == VAL_KIND_SCALAR && subtrahend.kind == VAL_KIND_SCALAR) {
+        return MK_SCL(AS_SCL(minuend) - AS_SCL(subtrahend));
     } else {
         env_throw(e, "cannot subtract %s from %s",
                   value_kindname(subtrahend.kind), value_kindname(minuend.kind));
