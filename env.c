@@ -10,7 +10,6 @@
 #include <assert.h>
 
 #include "libls/vector.h"
-#include "libls/sprintf_utils.h"
 
 #if defined(__GNUC_PATCHLEVEL__) && !defined(__clang_patchlevel__)
 #   define USE_RETARDED_PRAGMAS 1
@@ -21,7 +20,7 @@
 struct Env {
     Scopes *scopes;
     jmp_buf err_handler;
-    char *err;
+    char err[1024];
 };
 
 Env *
@@ -49,7 +48,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
 
 #define ERR(...) \
     do { \
-        e->err = ls_xasprintf(__VA_ARGS__); \
+        snprintf(e->err, sizeof(e->err), __VA_ARGS__); \
         ok = false; \
         goto done; \
     } while (0)
@@ -351,7 +350,7 @@ env_throw(Env *e, const char *fmt, ...)
 {
     va_list vl;
     va_start(vl, fmt);
-    e->err = ls_xvasprintf(fmt, vl);
+    vsnprintf(e->err, sizeof(e->err), fmt, vl);
     va_end(vl);
     longjmp(e->err_handler, 1);
 }
@@ -360,12 +359,6 @@ const char *
 env_last_error(Env *e)
 {
     return e->err;
-}
-
-void
-env_free_last_error(Env *e)
-{
-    free(e->err);
 }
 
 void

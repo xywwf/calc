@@ -1,5 +1,7 @@
 #include "trie.h"
 
+#include <string.h>
+
 typedef uint_least32_t UIndex;
 
 typedef struct {
@@ -14,12 +16,24 @@ struct Trie {
     size_t capacity;
 };
 
+static
+void *
+x2realloc0(void *p, size_t *pnelems, size_t elemsz)
+{
+    const size_t oldnelems = *pnelems;
+    p = ls_x2realloc(p, pnelems, elemsz);
+    if (elemsz) {
+        memset((char *) p + elemsz * oldnelems, 0, elemsz * (*pnelems - oldnelems));
+    }
+    return p;
+}
+
 static inline
 size_t
 add_node(Trie *t)
 {
     if (t->size == t->capacity) {
-        t->nodes = ls_x2realloc0(t->nodes, &t->capacity, sizeof(TrieNode));
+        t->nodes = x2realloc0(t->nodes, &t->capacity, sizeof(TrieNode));
     }
     return t->size++;
 }

@@ -1,5 +1,5 @@
 :fu greet(whom)
-    Cat("Hello, ", whom, "!")
+    "Hello, " ~~ whom ~~ "!"
 :end
 
 greet("world")

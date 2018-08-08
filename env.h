@@ -18,9 +18,6 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk);
 const char *
 env_last_error(Env *e);
 
-void
-env_free_last_error(Env *e);
-
 LS_ATTR_NORETURN LS_ATTR_PRINTF(2, 3)
 void
 env_throw(Env *e, const char *fmt, ...);
