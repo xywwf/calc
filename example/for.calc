@@ -1,4 +1,4 @@
-:for i | 1 | i<=10 | i+1 :do
+:for i | 1; i<=10; i+1 :do
     i
     i
     i

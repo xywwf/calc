@@ -7,6 +7,8 @@
 #include "op.h"
 #include "vm.h"
 
+typedef LS_VECTOR_OF(Instr) Chunk;
+
 typedef LS_VECTOR_OF(size_t) FixupList;
 
 typedef LS_VECTOR_OF(FixupList) FixupStack;
@@ -36,35 +38,15 @@ fixup_stack_last_push(FixupStack *fs, size_t fixup_pos)
     LS_VECTOR_PUSH(fs->data[fs->size - 1], fixup_pos);
 }
 
-typedef LS_VECTOR_OF(Instr *) TempChunkStack;
-
-static
-void
-temp_chunk_stack_clear(TempChunkStack *tcs)
-{
-    for (size_t i = 0; i < tcs->size; ++i) {
-        free(tcs->data[i]);
-    }
-    LS_VECTOR_CLEAR(*tcs);
-}
-
-static
-void
-temp_chunk_stack_free(TempChunkStack tcs)
-{
-    temp_chunk_stack_clear(&tcs);
-    LS_VECTOR_FREE(tcs);
-}
-
 struct Parser {
     Lexer *lex;
     bool expr_end;
-    LS_VECTOR_OF(Instr) chunk;
-    size_t func_level;
+    Chunk chunk;
+    Chunk aux_chunk;
     FixupStack fixup_cond;
     FixupStack fixup_loop_break;
     FixupStack fixup_loop_next;
-    TempChunkStack temp_chunks;
+    size_t func_level;
     jmp_buf err_handler;
     ParserError err;
 };
@@ -76,10 +58,10 @@ parser_new(Lexer *lex)
     *p = (Parser) {
         .lex = lex,
         .chunk = LS_VECTOR_NEW(),
+        .aux_chunk = LS_VECTOR_NEW(),
         .fixup_cond = LS_VECTOR_NEW(),
         .fixup_loop_break = LS_VECTOR_NEW(),
         .fixup_loop_next = LS_VECTOR_NEW(),
-        .temp_chunks = LS_VECTOR_NEW(),
     };
     return p;
 }
@@ -89,11 +71,11 @@ parser_reset(Parser *p)
 {
     p->expr_end = false;
     LS_VECTOR_CLEAR(p->chunk);
-    p->func_level = 0;
+    LS_VECTOR_CLEAR(p->aux_chunk);
     fixup_stack_clear(&p->fixup_cond);
     fixup_stack_clear(&p->fixup_loop_break);
     fixup_stack_clear(&p->fixup_loop_next);
-    temp_chunk_stack_clear(&p->temp_chunks);
+    p->func_level = 0;
 }
 
 typedef enum {
@@ -102,7 +84,6 @@ typedef enum {
     STOP_TOK_RBRACKET,
     STOP_TOK_COMMA,
     STOP_TOK_SEMICOLON,
-    STOP_TOK_BAR,
     STOP_TOK_EQ,
     STOP_TOK_COLON_EQ,
 
@@ -352,10 +333,6 @@ expr(Parser *p, int min_priority)
             p->expr_end = false;
             return STOP_TOK_SEMICOLON;
 
-        case LEX_KIND_BAR:
-            AFTER_EXPR(p, m);
-            p->expr_end = false;
-            return STOP_TOK_BAR;
 
         case LEX_KIND_ERROR:
             throw_at(p, m, m.data);
@@ -392,6 +369,7 @@ expr(Parser *p, int min_priority)
         case LEX_KIND_EXIT:
         case LEX_KIND_END:
         case LEX_KIND_FOR:
+        case LEX_KIND_BAR:
             return STOP_TOK_NONSENSE;
         }
     }
@@ -406,6 +384,15 @@ reverse_chunk(Instr *chunk, size_t nchunk)
         chunk[i] = chunk[nchunk - i - 1];
         chunk[nchunk - i - 1] = tmp;
     }
+}
+
+static
+void
+swap_chunks(Parser *p)
+{
+    Chunk tmp = p->chunk;
+    p->chunk = p->aux_chunk;
+    p->aux_chunk = tmp;
 }
 
 static inline
@@ -626,21 +613,14 @@ stmt(Parser *p)
             INSTR_N(p, CMD_JUMP_UNLESS);
 
             // assignment
-            Instr *achunk;
-            size_t nachunk;
-            {
-                const size_t old_size = p->chunk.size;
-                if (expr(p, -1) != STOP_TOK_DO) {
-                    lexer_rollback(p->lex);
-                    throw_at(p, lexer_next(p->lex), "expected ':do'");
-                }
-                INSTR(p, CMD_LOCAL, .varname = {.start = var.start, .size = var.size});
-
-                nachunk = p->chunk.size - old_size;
-                achunk = ls_xmemdup(p->chunk.data + old_size, sizeof(Instr) * nachunk);
-                LS_VECTOR_PUSH(p->temp_chunks, achunk);
-                p->chunk.size = old_size;
+            const size_t old_aux_size = p->aux_chunk.size;
+            swap_chunks(p);
+            if (expr(p, -1) != STOP_TOK_DO) {
+                lexer_rollback(p->lex);
+                throw_at(p, lexer_next(p->lex), "expected ':do'");
             }
+            INSTR(p, CMD_LOCAL, .varname = {.start = var.start, .size = var.size});
+            swap_chunks(p);
 
             // loop body
             StopTokenKind s;
@@ -652,11 +632,10 @@ stmt(Parser *p)
 
             const size_t cont_instr = p->chunk.size;
 
-            for (size_t i = 0; i < nachunk; ++i) {
-                LS_VECTOR_PUSH(p->chunk, achunk[i]);
+            for (size_t i = old_aux_size; i < p->aux_chunk.size; ++i) {
+                LS_VECTOR_PUSH(p->chunk, p->aux_chunk.data[i]);
             }
-            free(achunk);
-            --p->temp_chunks.size;
+            p->aux_chunk.size = old_aux_size;
 
             INSTR(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
 
@@ -826,7 +805,7 @@ stmt(Parser *p)
 }
 
 bool
-parser_parse_expr(Parser *p)
+parser_parse(Parser *p)
 {
     if (setjmp(p->err_handler) != 0) {
         return false;
@@ -859,9 +838,9 @@ void
 parser_destroy(Parser *p)
 {
     LS_VECTOR_FREE(p->chunk);
+    LS_VECTOR_FREE(p->aux_chunk);
     fixup_stack_free(p->fixup_cond);
     fixup_stack_free(p->fixup_loop_break);
     fixup_stack_free(p->fixup_loop_next);
-    temp_chunk_stack_free(p->temp_chunks);
     free(p);
 }

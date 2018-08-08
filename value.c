@@ -10,7 +10,7 @@ gcobject_destroy(Value v)
 {
     switch (v.kind) {
     case VAL_KIND_FUNC:
-        func_destroy((Func *) v.as.gcobj);
+        func_destroy(AS_FUNC(v));
         break;
     default:
         break;
@@ -27,11 +27,11 @@ value_print(Value v)
         /* do not print anything */
         break;
     case VAL_KIND_SCALAR:
-        printf("%.15g\n", v.as.scalar);
+        printf("%.15g\n", AS_SCL(v));
         break;
     case VAL_KIND_MATRIX:
         {
-            Matrix *m = (Matrix *) v.as.gcobj;
+            Matrix *m = AS_MAT(v);
             size_t elem_idx = 0;
             puts("[");
             for (unsigned i = 0; i < m->height; ++i) {
@@ -51,7 +51,7 @@ value_print(Value v)
         break;
     case VAL_KIND_STR:
         {
-            Str *s = (Str *) v.as.gcobj;
+            Str *s = AS_STR(v);
             fwrite(s->data, 1, s->ndata, stdout);
             fputc('\n', stdout);
         }
@@ -66,10 +66,10 @@ value_is_truthy(Value v)
     case VAL_KIND_NIL:
         return false;
     case VAL_KIND_SCALAR:
-        return !!v.as.scalar;
+        return !!AS_SCL(v);
     case VAL_KIND_MATRIX:
         {
-            Matrix *m = (Matrix *) v.as.gcobj;
+            Matrix *m = AS_MAT(v);
             const size_t nelems = (size_t) m->height * m->width;
             for (size_t i = 0; i < nelems; ++i) {
                 if (m->elems[i]) {
@@ -83,7 +83,7 @@ value_is_truthy(Value v)
     case VAL_KIND_FUNC:
         return true;
     case VAL_KIND_STR:
-        return ((Str *) v.as.gcobj)->ndata;
+        return AS_STR(v)->ndata;
     }
     LS_UNREACHABLE();
 }

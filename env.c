@@ -76,19 +76,13 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             break;
 
         case CMD_LOAD_SCALAR:
-            LS_VECTOR_PUSH(stack, ((Value) {
-                .kind = VAL_KIND_SCALAR,
-                .as.scalar = in.args.scalar,
-            }));
+            LS_VECTOR_PUSH(stack, MK_SCL(in.args.scalar));
             break;
 
         case CMD_LOAD_STR:
             {
                 Str *s = str_new_unescape(in.args.str.start + 1, in.args.str.size - 2);
-                LS_VECTOR_PUSH(stack, ((Value) {
-                    .kind = VAL_KIND_STR,
-                    .as.gcobj = (GcObject *) s,
-                }));
+                LS_VECTOR_PUSH(stack, MK_STR(s));
             }
             break;
 
@@ -132,7 +126,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                 if (nindices > 2) {
                     ERR("number of indices is greater than 2");
                 }
-                Matrix *mat = (Matrix *) container.as.gcobj;
+                Matrix *mat = AS_MAT(container);
 
                 // <danger>
                 PROTECT();
@@ -160,7 +154,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                 if (nindices > 2) {
                     ERR("number of indices is greater than 2");
                 }
-                Matrix *mat = (Matrix *) container.as.gcobj;
+                Matrix *mat = AS_MAT(container);
 
                 // <danger>
                 PROTECT();
@@ -225,7 +219,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                     {
                         // <danger>
                         PROTECT();
-                        Value result = func.as.cfunc(e, ptr + 1, in.args.nargs);
+                        Value result = AS_CFUNC(func)(e, ptr + 1, in.args.nargs);
                         // </danger>
                         for (size_t i = 0; i < in.args.nargs + 1; ++i) {
                             value_unref(ptr[i]);
@@ -237,7 +231,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
 
                 case VAL_KIND_FUNC:
                     {
-                        Func *f = (Func *) func.as.gcobj;
+                        Func *f = AS_FUNC(func);
                         if (in.args.nargs != f->nargs) {
                             ERR("wrong # of arguments");
                         }
@@ -267,10 +261,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                 // </danger>
 
                 stack.size -= nelems;
-                LS_VECTOR_PUSH(stack, ((Value) {
-                    .kind = VAL_KIND_MATRIX,
-                    .as = {.gcobj = (GcObject *) m},
-                }));
+                LS_VECTOR_PUSH(stack, MK_MAT(m));
             }
             break;
 
@@ -298,12 +289,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                     in.args.func.nargs,
                     chunk + 1,
                     in.args.func.offset - 1);
-
-                LS_VECTOR_PUSH(stack, ((Value) {
-                    .kind = VAL_KIND_FUNC,
-                    .as = {.gcobj = (GcObject *) f},
-                }));
-
+                LS_VECTOR_PUSH(stack, MK_FUNC(f));
                 chunk += in.args.func.offset;
             }
             continue;
@@ -312,9 +298,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             if (!callstack.size) {
                 goto done;
             }
-            LS_VECTOR_PUSH(stack, ((Value) {
-                .kind = VAL_KIND_NIL,
-            }));
+            LS_VECTOR_PUSH(stack, MK_NIL());
             // fall through
         case CMD_RETURN:
             {
@@ -332,6 +316,10 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
     }
 
 done:
+    if (ok) {
+        assert(!stack.size);
+        assert(!callstack.size);
+    }
     for (size_t i = 0; i < stack.size; ++i) {
         value_unref(stack.data[i]);
     }

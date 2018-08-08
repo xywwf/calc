@@ -42,6 +42,7 @@ func_new(unsigned nargs, const Instr *chunk, size_t nchunk)
 
     f->strdups = strdups.data;
     return f;
+#undef XPAND_FOR_STR
 }
 
 void

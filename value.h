@@ -3,6 +3,19 @@
 
 #include "common.h"
 
+#define MK_NIL() ((Value) {.kind = VAL_KIND_NIL})
+#define MK_SCL(X_) ((Value) {.kind = VAL_KIND_SCALAR, .as = {.scalar = X_}})
+#define MK_MAT(X_) ((Value) {.kind = VAL_KIND_MATRIX, .as = {.gcobj = (GcObject *) X_}})
+#define MK_CFUNC(X_) ((Value) {.kind = VAL_KIND_CFUNC, .as = {.cfunc = X_}})
+#define MK_FUNC(X_) ((Value) {.kind = VAL_KIND_FUNC, .as = {.gcobj = (GcObject *) X_}})
+#define MK_STR(X_) ((Value) {.kind = VAL_KIND_STR, .as = {.gcobj = (GcObject *) X_}})
+
+#define AS_SCL(X_) (X_).as.scalar
+#define AS_MAT(X_) ((Matrix *) (X_).as.gcobj)
+#define AS_CFUNC(X_) (X_).as.cfunc
+#define AS_FUNC(X_) ((Func *) (X_).as.gcobj)
+#define AS_STR(X_) ((Str *) (X_).as.gcobj)
+
 struct Env;
 
 typedef enum {

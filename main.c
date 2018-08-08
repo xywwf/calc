@@ -1,3 +1,5 @@
+#include "common.h"
+
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
@@ -6,24 +8,15 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 
-#include "common.h"
+#include "runtime.h"
 #include "op.h"
 #include "trie.h"
-#include "lexer.h"
-#include "parser.h"
-#include "scopes.h"
 #include "env.h"
 #include "value.h"
 #include "matrix.h"
 #include "func.h"
 #include "str.h"
 #include "disasm.h"
-
-#define ASMAT(V_) ((Matrix *) (V_).as.gcobj)
-
-#define SCALAR(X_) ((Value) {.kind = VAL_KIND_SCALAR, .as = {.scalar = X_}})
-#define CFUNC(X_) ((Value) {.kind = VAL_KIND_CFUNC, .as = {.cfunc = X_}})
-#define MAT(X_) ((Value) {.kind = VAL_KIND_MATRIX, .as = {.gcobj = (GcObject *) X_}})
 
 static inline
 bool
@@ -38,16 +31,16 @@ X_uminus(Env *e, Value a)
 {
     switch (a.kind) {
     case VAL_KIND_SCALAR:
-        return SCALAR(-a.as.scalar);
+        return MK_SCL(-a.as.scalar);
     case VAL_KIND_MATRIX:
         {
-            Matrix *x = ASMAT(a);
+            Matrix *x = AS_MAT(a);
             Matrix *y = matrix_new(x->height, x->width);
             const size_t n = (size_t) x->height * x->width;
             for (size_t i = 0; i < n; ++i) {
                 y->elems[i] = -x->elems[i];
             }
-            return MAT(y);
+            return MK_MAT(y);
         }
     default:
         env_throw(e, "cannot negate %s value", value_kindname(a.kind));
@@ -59,8 +52,8 @@ Value
 X_bminus(Env *e, Value a, Value b)
 {
     if (a.kind == VAL_KIND_MATRIX && b.kind == VAL_KIND_MATRIX) {
-        Matrix *x = ASMAT(a);
-        Matrix *y = ASMAT(b);
+        Matrix *x = AS_MAT(a);
+        Matrix *y = AS_MAT(b);
         if (!eqdim(x, y)) {
             env_throw(e, "matrices unconformable for subtraction");
         }
@@ -69,9 +62,9 @@ X_bminus(Env *e, Value a, Value b)
         for (size_t i = 0; i < n; ++i) {
             z->elems[i] = x->elems[i] - y->elems[i];
         }
-        return MAT(z);
+        return MK_MAT(z);
     } else if (a.kind == VAL_KIND_SCALAR && b.kind == VAL_KIND_SCALAR) {
-        return SCALAR(a.as.scalar - b.as.scalar);
+        return MK_SCL(a.as.scalar - b.as.scalar);
     } else {
         env_throw(e, "cannot subtract %s from %s", value_kindname(b.kind), value_kindname(a.kind));
     }
@@ -82,8 +75,8 @@ Value
 X_plus(Env *e, Value a, Value b)
 {
     if (a.kind == VAL_KIND_MATRIX && b.kind == VAL_KIND_MATRIX) {
-        Matrix *x = ASMAT(a);
-        Matrix *y = ASMAT(b);
+        Matrix *x = AS_MAT(a);
+        Matrix *y = AS_MAT(b);
         if (!eqdim(x, y)) {
             env_throw(e, "matrices unconformable for addition");
         }
@@ -92,9 +85,9 @@ X_plus(Env *e, Value a, Value b)
         for (size_t i = 0; i < n; ++i) {
             z->elems[i] = x->elems[i] + y->elems[i];
         }
-        return MAT(z);
+        return MK_MAT(z);
     } else if (a.kind == VAL_KIND_SCALAR && b.kind == VAL_KIND_SCALAR) {
-        return SCALAR(a.as.scalar + b.as.scalar);
+        return MK_SCL(a.as.scalar + b.as.scalar);
     } else {
         env_throw(e, "cannot add %s to %s", value_kindname(a.kind), value_kindname(b.kind));
     }
@@ -104,14 +97,14 @@ static inline
 Value
 sbym(Value s, Value m)
 {
-    Matrix *x = ASMAT(m);
+    Matrix *x = AS_MAT(m);
     const Scalar a = s.as.scalar;
     Matrix *y = matrix_new(x->height, x->width);
     const size_t n = (size_t) x->height * x->width;
     for (size_t i = 0; i < n; ++i) {
         y->elems[i] = a * x->elems[i];
     }
-    return MAT(y);
+    return MK_MAT(y);
 }
 
 static
@@ -119,8 +112,8 @@ Value
 X_mul(Env *e, Value a, Value b)
 {
     if (a.kind == VAL_KIND_MATRIX && b.kind == VAL_KIND_MATRIX) {
-        Matrix *x = ASMAT(a);
-        Matrix *y = ASMAT(b);
+        Matrix *x = AS_MAT(a);
+        Matrix *y = AS_MAT(b);
         if (x->width != y->height) {
             env_throw(e, "matrices unconformable for multiplication");
         }
@@ -137,9 +130,9 @@ X_mul(Env *e, Value a, Value b)
                 z->elems[i * p + j] = elem;
             }
         }
-        return MAT(z);
+        return MK_MAT(z);
     } else if (a.kind == VAL_KIND_SCALAR && b.kind == VAL_KIND_SCALAR) {
-        return SCALAR(a.as.scalar * b.as.scalar);
+        return MK_SCL(a.as.scalar * b.as.scalar);
     } else if (a.kind == VAL_KIND_SCALAR && b.kind == VAL_KIND_MATRIX) {
         return sbym(a, b);
     } else if (a.kind == VAL_KIND_MATRIX && b.kind == VAL_KIND_SCALAR) {
@@ -156,7 +149,7 @@ X_div(Env *e, Value a, Value b)
     if (a.kind != VAL_KIND_SCALAR || b.kind != VAL_KIND_SCALAR) {
         env_throw(e, "cannot divide %s by %s", value_kindname(a.kind), value_kindname(b.kind));
     }
-    return SCALAR(a.as.scalar / b.as.scalar);
+    return MK_SCL(a.as.scalar / b.as.scalar);
 }
 
 static
@@ -167,7 +160,7 @@ X_mod(Env *e, Value a, Value b)
         env_throw(e, "cannot calculate remainder of %s divided by %s",
                   value_kindname(a.kind), value_kindname(b.kind));
     }
-    return SCALAR(fmod(a.as.scalar, b.as.scalar));
+    return MK_SCL(fmod(a.as.scalar, b.as.scalar));
 }
 
 #define DECLCOMP(Op_, Name_) \
@@ -179,7 +172,7 @@ X_mod(Env *e, Value a, Value b)
             env_throw(e, "cannot compare %s and %s", \
                       value_kindname(a.kind), value_kindname(b.kind)); \
         } \
-        return SCALAR(a.as.scalar Op_ b.as.scalar); \
+        return MK_SCL(a.as.scalar Op_ b.as.scalar); \
     }
 DECLCOMP(<,  lt)
 DECLCOMP(<=, le)
@@ -192,35 +185,35 @@ X_eq(Env *e, Value a, Value b)
 {
     (void) e;
     if (a.kind != b.kind) {
-        return SCALAR(0);
+        return MK_SCL(0);
     }
     switch (a.kind) {
     case VAL_KIND_NIL:
-        return SCALAR(1);
+        return MK_SCL(1);
     case VAL_KIND_SCALAR:
-        return SCALAR(a.as.scalar == b.as.scalar);
+        return MK_SCL(a.as.scalar == b.as.scalar);
     case VAL_KIND_MATRIX:
         {
-            Matrix *x = ASMAT(a);
-            Matrix *y = ASMAT(b);
+            Matrix *x = AS_MAT(a);
+            Matrix *y = AS_MAT(b);
             if (!eqdim(x, y)) {
-                return SCALAR(0);
+                return MK_SCL(0);
             }
             const size_t nelems = (size_t) x->height * x->width;
             for (size_t i = 0; i < nelems; ++i) {
                 if (x->elems[i] != y->elems[i]) {
-                    return SCALAR(0);
+                    return MK_SCL(0);
                 }
             }
-            return SCALAR(1);
+            return MK_SCL(1);
         }
         break;
     case VAL_KIND_CFUNC:
-        return SCALAR(a.as.cfunc == b.as.cfunc);
+        return MK_SCL(a.as.cfunc == b.as.cfunc);
     case VAL_KIND_FUNC:
-        return SCALAR(a.as.gcobj == b.as.gcobj);
+        return MK_SCL(a.as.gcobj == b.as.gcobj);
     case VAL_KIND_STR:
-        return SCALAR(str_eq((Str *) a.as.gcobj, (Str *) b.as.gcobj));
+        return MK_SCL(str_eq(AS_STR(a), AS_STR(b)));
     }
     LS_UNREACHABLE();
 }
@@ -231,35 +224,35 @@ X_ne(Env *e, Value a, Value b)
 {
     (void) e;
     if (a.kind != b.kind) {
-        return SCALAR(1);
+        return MK_SCL(1);
     }
     switch (a.kind) {
     case VAL_KIND_NIL:
-        return SCALAR(0);
+        return MK_SCL(0);
     case VAL_KIND_SCALAR:
-        return SCALAR(a.as.scalar != b.as.scalar);
+        return MK_SCL(a.as.scalar != b.as.scalar);
     case VAL_KIND_MATRIX:
         {
-            Matrix *x = ASMAT(a);
-            Matrix *y = ASMAT(b);
+            Matrix *x = AS_MAT(a);
+            Matrix *y = AS_MAT(b);
             if (!eqdim(x, y)) {
-                return SCALAR(1);
+                return MK_SCL(1);
             }
             const size_t nelems = (size_t) x->height * x->width;
             for (size_t i = 0; i < nelems; ++i) {
                 if (x->elems[i] != y->elems[i]) {
-                    return SCALAR(1);
+                    return MK_SCL(1);
                 }
             }
-            return SCALAR(0);
+            return MK_SCL(0);
         }
         break;
     case VAL_KIND_CFUNC:
-        return SCALAR(a.as.cfunc != b.as.cfunc);
+        return MK_SCL(a.as.cfunc != b.as.cfunc);
     case VAL_KIND_FUNC:
-        return SCALAR(a.as.gcobj != b.as.gcobj);
+        return MK_SCL(a.as.gcobj != b.as.gcobj);
     case VAL_KIND_STR:
-        return SCALAR(!str_eq((Str *) a.as.gcobj, (Str *) b.as.gcobj));
+        return MK_SCL(!str_eq(AS_STR(a), AS_STR(b)));
     }
     LS_UNREACHABLE();
 }
@@ -269,7 +262,7 @@ Value
 X_not(Env *e, Value a)
 {
     (void) e;
-    return SCALAR(!value_is_truthy(a));
+    return MK_SCL(!value_is_truthy(a));
 }
 
 static
@@ -277,7 +270,7 @@ Value
 X_and(Env *e, Value a, Value b)
 {
     (void) e;
-    return SCALAR(value_is_truthy(a) && value_is_truthy(b));
+    return MK_SCL(value_is_truthy(a) && value_is_truthy(b));
 }
 
 static
@@ -285,7 +278,7 @@ Value
 X_or(Env *e, Value a, Value b)
 {
     (void) e;
-    return SCALAR(value_is_truthy(a) || value_is_truthy(b));
+    return MK_SCL(value_is_truthy(a) || value_is_truthy(b));
 }
 
 static
@@ -296,7 +289,7 @@ X_pow(Env *e, Value a, Value b)
         env_throw(e, "cannot raise %s to power of %s",
                   value_kindname(a.kind), value_kindname(b.kind));
     }
-    return SCALAR(pow(a.as.scalar, b.as.scalar));
+    return MK_SCL(pow(a.as.scalar, b.as.scalar));
 }
 
 #define DECL1(Name_) \
@@ -310,17 +303,21 @@ X_pow(Env *e, Value a, Value b)
         if (args[0].kind != VAL_KIND_SCALAR) { \
             env_throw(e, "'%s' can only be applied to a scalar", #Name_); \
         } \
-        return SCALAR(Name_(args[0].as.scalar)); \
+        return MK_SCL(Name_(args[0].as.scalar)); \
     }
 
 DECL1(sin)
 DECL1(cos)
+DECL1(tan)
+DECL1(asin)
+DECL1(acos)
 DECL1(atan)
 DECL1(exp)
 DECL1(log)
 DECL1(floor)
 DECL1(trunc)
 DECL1(ceil)
+DECL1(round)
 
 static
 Value
@@ -337,7 +334,7 @@ X_Mat(Env *e, const Value *args, unsigned nargs)
     if ((height == 0) != (width == 0)) {
         env_throw(e, "invalid matrix dimensions");
     }
-    return MAT(matrix_new(height, width));
+    return MK_MAT(matrix_new(height, width));
 }
 
 static
@@ -350,11 +347,11 @@ X_Dim(Env *e, const Value *args, unsigned nargs)
     if (args[0].kind != VAL_KIND_MATRIX) {
         env_throw(e, "'Dim' can only be applied to a matrix");
     }
-    Matrix *m = ASMAT(args[0]);
+    Matrix *m = AS_MAT(args[0]);
     Matrix *d = matrix_new(1, 2);
     d->elems[0] = m->height;
     d->elems[1] = m->width;
-    return MAT(d);
+    return MK_MAT(d);
 }
 
 static
@@ -367,7 +364,7 @@ X_Transpose(Env *e, const Value *args, unsigned nargs)
     if (args[0].kind != VAL_KIND_MATRIX) {
         env_throw(e, "'Trans' can only be applied to a matrix");
     }
-    Matrix *x = ASMAT(args[0]);
+    Matrix *x = AS_MAT(args[0]);
     const unsigned height = x->height;
     const unsigned width = x->width;
     Matrix *y = matrix_new(width, height);
@@ -376,7 +373,7 @@ X_Transpose(Env *e, const Value *args, unsigned nargs)
             y->elems[i * height + j] = x->elems[j * width + i];
         }
     }
-    return MAT(y);
+    return MK_MAT(y);
 }
 
 static
@@ -410,7 +407,7 @@ X_Rand(Env *e, const Value *args, unsigned nargs)
     }
 
     unsigned u = *cur++;
-    return SCALAR(u / (Scalar) UINT32_MAX);
+    return MK_SCL(u / (Scalar) UINT32_MAX);
 }
 
 static
@@ -425,7 +422,7 @@ X_DisAsm(Env *e, const Value *args, unsigned nargs)
     }
     Func *f = (Func *) args[0].as.gcobj;
     disasm_print(f->chunk, f->nchunk);
-    return (Value) {.kind = VAL_KIND_NIL};
+    return MK_NIL();
 }
 
 static
@@ -436,8 +433,7 @@ X_Kind(Env *e, const Value *args, unsigned nargs)
         env_throw(e, "'Kind' expects exactly one argument");
     }
     const char *kind = value_kindname(args[0].kind);
-    Str *s = str_new(kind, strlen(kind));
-    return (Value) {.kind = VAL_KIND_STR, .as = {.gcobj = (GcObject *) s}};
+    return MK_STR(str_new(kind, strlen(kind)));
 }
 
 static
@@ -479,29 +475,7 @@ X_concat(Env *e, Value a, Value b)
     append_str_repr(&buf, b);
     Str *s = str_new(buf.data, buf.size);
     LS_VECTOR_FREE(buf);
-    return (Value) {.kind = VAL_KIND_STR, .as = {.gcobj = (GcObject *) s}};
-}
-
-static
-void
-destroy_op(void *userdata, LexemKind kind, void *data)
-{
-    (void) userdata;
-    switch (kind) {
-    case LEX_KIND_OP:
-        free(data);
-        break;
-    case LEX_KIND_AMBIG_OP:
-        {
-            AmbigOp *amb = data;
-            free(amb->prefix);
-            free(amb->infix);
-            free(amb);
-        }
-        break;
-    default:
-        break;
-    }
+    return MK_STR(s);
 }
 
 static
@@ -519,8 +493,39 @@ detect_tty(void)
 }
 
 static
-char *
-full_read(int fd, size_t *nbuf)
+bool
+dostring(Runtime rt, const char *name, const char *buf, size_t nbuf)
+{
+    ExecError err = runtime_exec(rt, buf, nbuf);
+    switch (err.kind) {
+    case ERR_KIND_OK:
+        return true;
+    case ERR_KIND_CTIME_HAS_POS:
+        {
+            const char *pos = err.pos.start;
+            size_t line = 1, column = 1;
+            for (const char *ptr = buf; ptr != pos; ++ptr) {
+                if (*ptr == '\n') {
+                    ++line;
+                    column = 1;
+                } else {
+                    ++column;
+                }
+            }
+            fprintf(stderr, "%s:%zu:%zu: %s\n", name, line, column, err.msg);
+        }
+        return false;
+    case ERR_KIND_CTIME_NO_POS:
+    case ERR_KIND_RTIME_NO_POS:
+        fprintf(stderr, "%s: %s\n", name, err.msg);
+        return false;
+    }
+    LS_UNREACHABLE();
+}
+
+static
+bool
+dofd(Runtime rt, const char *name, int fd)
 {
     char *buf = NULL;
     size_t size = 0;
@@ -531,23 +536,81 @@ full_read(int fd, size_t *nbuf)
         }
         const ssize_t r = read(fd, buf + size, capacity - size);
         if (r < 0) {
-            return NULL;
+            perror(name);
+            return false;
         } else if (r == 0) {
             break;
         }
         size += r;
     }
-    *nbuf = size;
-    return buf;
+    const bool r = dostring(rt, name, buf, size);
+    free(buf);
+    return r;
+}
+
+static
+bool
+dofile(Runtime rt, const char *path)
+{
+    const int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        perror(path);
+        return false;
+    }
+    const bool r = dofd(rt, path, fd);
+    close(fd);
+    return r;
+}
+
+static
+void
+interactive(Runtime rt)
+{
+    while (1) {
+        char *expr = readline("≈≈> ");
+        if (!expr) {
+            fputc('\n', stderr);
+            return;
+        }
+        add_history(expr);
+        const size_t nexpr = strlen(expr);
+
+        ExecError err = runtime_exec(rt, expr, nexpr);
+        switch (err.kind) {
+        case ERR_KIND_OK:
+            break;
+        case ERR_KIND_CTIME_HAS_POS:
+            {
+                fprintf(stderr, "> %.*s\n", (int) nexpr, expr);
+                size_t start_pos = err.pos.start - expr;
+                size_t end_pos = start_pos + err.pos.size;
+                if (end_pos == start_pos) {
+                    ++end_pos;
+                }
+                for (size_t i = 0; i < start_pos; ++i) {
+                    expr[i] = ' ';
+                }
+                expr[start_pos] = '^';
+                for (size_t i = start_pos + 1; i < end_pos; ++i) {
+                    expr[i] = '~';
+                }
+                fprintf(stderr, "  %.*s %s\n", (int) end_pos, expr, err.msg);
+            }
+            break;
+        case ERR_KIND_CTIME_NO_POS:
+        case ERR_KIND_RTIME_NO_POS:
+            fprintf(stderr, "%s\n", err.msg);
+        }
+        free(expr);
+    }
 }
 
 static
 void
 usage(void)
 {
-    fprintf(stderr, "USAGE: main [-i]\n"
+    fprintf(stderr, "USAGE: main [-i] [FILE ...]\n"
                     "       main -c CODE\n"
-                    "       main FILE\n"
                     );
     exit(2);
 }
@@ -578,214 +641,113 @@ main(int argc, char **argv)
         }
     }
 
-    Trie *ops = trie_new(128);
-#define DUP_OBJ(T_, ...) ls_xmemdup((T_[1]) {__VA_ARGS__}, sizeof(T_))
-#define REG_OP(Sym_, ...) \
-    trie_insert(ops, Sym_, LEX_KIND_OP, DUP_OBJ(Op, __VA_ARGS__))
-#define REG_AMBIG_OP(Sym_, ...) \
-    trie_insert(ops, Sym_, LEX_KIND_AMBIG_OP, DUP_OBJ(AmbigOp, __VA_ARGS__))
-#define UNARY(Exec_, ...) {.arity = 1, .exec = {.unary = Exec_}, __VA_ARGS__}
-#define BINARY(Exec_, ...) {.arity = 2, .exec = {.binary = Exec_}, __VA_ARGS__}
+    Runtime rt = runtime_new();
+    rt.dflag = dflag;
 
-    REG_AMBIG_OP("-", {
-        .prefix = DUP_OBJ(Op, UNARY(X_uminus, .assoc = OP_ASSOC_RIGHT, .priority = 100)),
-        .infix = DUP_OBJ(Op, BINARY(X_bminus, .assoc = OP_ASSOC_LEFT, .priority = 1)),
-    });
-    REG_OP("+", BINARY(X_plus, .assoc = OP_ASSOC_LEFT, .priority = 1));
-    REG_OP("*", BINARY(X_mul, .assoc = OP_ASSOC_LEFT, .priority = 2));
-    REG_OP("/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
-    REG_OP("%", BINARY(X_mod, .assoc = OP_ASSOC_LEFT, .priority = 2));
-    REG_OP("^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
+#define UNARY(Exec_, ...) (Op) {.arity = 1, .exec = {.unary = Exec_}, __VA_ARGS__}
+#define BINARY(Exec_, ...) (Op) {.arity = 2, .exec = {.binary = Exec_}, __VA_ARGS__}
 
-    REG_OP("~~", BINARY(X_concat, .assoc = OP_ASSOC_LEFT,  .priority = 0));
+    runtime_reg_ambig_op(rt, "-",
+        UNARY(X_uminus, .assoc = OP_ASSOC_RIGHT, .priority = 100),
+        BINARY(X_bminus, .assoc = OP_ASSOC_LEFT, .priority = 1)
+    );
+    runtime_reg_op(rt, "+", BINARY(X_plus, .assoc = OP_ASSOC_LEFT, .priority = 1));
 
-    REG_OP("!",  UNARY(X_not,  .assoc = OP_ASSOC_RIGHT, .priority = 0));
-    REG_OP("&&", BINARY(X_and, .assoc = OP_ASSOC_LEFT,  .priority = 0));
-    REG_OP("||", BINARY(X_or,  .assoc = OP_ASSOC_LEFT,  .priority = 0));
+    runtime_reg_op(rt, "*", BINARY(X_mul, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    runtime_reg_op(rt, "/", BINARY(X_div, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    runtime_reg_op(rt, "%", BINARY(X_mod, .assoc = OP_ASSOC_LEFT, .priority = 2));
+    runtime_reg_op(rt, "^", BINARY(X_pow, .assoc = OP_ASSOC_RIGHT, .priority = 3));
 
-    REG_OP("<",  BINARY(X_lt, .assoc = OP_ASSOC_LEFT, .priority = 0));
-    REG_OP("<=", BINARY(X_le, .assoc = OP_ASSOC_LEFT, .priority = 0));
-    REG_OP("==", BINARY(X_eq, .assoc = OP_ASSOC_LEFT, .priority = 0));
-    REG_OP("!=", BINARY(X_ne, .assoc = OP_ASSOC_LEFT, .priority = 0));
-    REG_OP(">",  BINARY(X_gt, .assoc = OP_ASSOC_LEFT, .priority = 0));
-    REG_OP(">=", BINARY(X_ge, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    runtime_reg_op(rt, "~~", BINARY(X_concat, .assoc = OP_ASSOC_LEFT,  .priority = 0));
 
-    trie_insert(ops, "=",  LEX_KIND_EQ,       NULL);
-    trie_insert(ops, ":=", LEX_KIND_COLON_EQ, NULL);
-    trie_insert(ops, "|",  LEX_KIND_BAR,      NULL);
+    runtime_reg_op(rt, "!",  UNARY(X_not,  .assoc = OP_ASSOC_RIGHT, .priority = 0));
+    runtime_reg_op(rt, "&&", BINARY(X_and, .assoc = OP_ASSOC_LEFT,  .priority = 0));
+    runtime_reg_op(rt, "||", BINARY(X_or,  .assoc = OP_ASSOC_LEFT,  .priority = 0));
 
-    trie_insert(ops, ":if",     LEX_KIND_IF,     NULL);
-    trie_insert(ops, ":then",   LEX_KIND_THEN,   NULL);
-    trie_insert(ops, ":elif",   LEX_KIND_ELIF,   NULL);
-    trie_insert(ops, ":else",   LEX_KIND_ELSE,   NULL);
-    trie_insert(ops, ":while",  LEX_KIND_WHILE,  NULL);
-    trie_insert(ops, ":for",    LEX_KIND_FOR,    NULL);
-    trie_insert(ops, ":do",     LEX_KIND_DO,     NULL);
-    trie_insert(ops, ":break",  LEX_KIND_BREAK,  NULL);
-    trie_insert(ops, ":next",   LEX_KIND_NEXT,   NULL);
-    trie_insert(ops, ":fu",     LEX_KIND_FU,     NULL);
-    trie_insert(ops, ":return", LEX_KIND_RETURN, NULL);
-    trie_insert(ops, ":exit",   LEX_KIND_EXIT,   NULL);
-    trie_insert(ops, ":end",    LEX_KIND_END,    NULL);
+    runtime_reg_op(rt, "<",  BINARY(X_lt, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    runtime_reg_op(rt, "<=", BINARY(X_le, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    runtime_reg_op(rt, "==", BINARY(X_eq, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    runtime_reg_op(rt, "!=", BINARY(X_ne, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    runtime_reg_op(rt, ">",  BINARY(X_gt, .assoc = OP_ASSOC_LEFT, .priority = 0));
+    runtime_reg_op(rt, ">=", BINARY(X_ge, .assoc = OP_ASSOC_LEFT, .priority = 0));
 
-    // inv, rank, det, kernel, image, LU, tr[ace], solve
-    // eigenvalues, eigenvectors, eigenspaces, def (=> -1, -0.5, 0, 0.5, 1), conjT
+    trie_insert(rt.ops, "=",  LEX_KIND_EQ,       NULL);
+    trie_insert(rt.ops, ":=", LEX_KIND_COLON_EQ, NULL);
+    trie_insert(rt.ops, "|",  LEX_KIND_BAR,      NULL);
 
-    Lexer *lex = lexer_new(ops);
-    Parser *parser = parser_new(lex);
-    Scopes *scopes = scopes_new();
-#define NAME(S_) S_, strlen(S_)
-    scopes_put(scopes, NAME("sin"),   CFUNC(X_sin));
-    scopes_put(scopes, NAME("cos"),   CFUNC(X_cos));
-    scopes_put(scopes, NAME("atan"),  CFUNC(X_atan));
-    scopes_put(scopes, NAME("ln"),    CFUNC(X_log));
-    scopes_put(scopes, NAME("exp"),   CFUNC(X_exp));
-    scopes_put(scopes, NAME("trunc"), CFUNC(X_trunc));
-    scopes_put(scopes, NAME("floor"), CFUNC(X_floor));
-    scopes_put(scopes, NAME("ceil"),  CFUNC(X_ceil));
+    trie_insert(rt.ops, ":if",     LEX_KIND_IF,     NULL);
+    trie_insert(rt.ops, ":then",   LEX_KIND_THEN,   NULL);
+    trie_insert(rt.ops, ":elif",   LEX_KIND_ELIF,   NULL);
+    trie_insert(rt.ops, ":else",   LEX_KIND_ELSE,   NULL);
+    trie_insert(rt.ops, ":while",  LEX_KIND_WHILE,  NULL);
+    trie_insert(rt.ops, ":for",    LEX_KIND_FOR,    NULL);
+    trie_insert(rt.ops, ":do",     LEX_KIND_DO,     NULL);
+    trie_insert(rt.ops, ":break",  LEX_KIND_BREAK,  NULL);
+    trie_insert(rt.ops, ":next",   LEX_KIND_NEXT,   NULL);
+    trie_insert(rt.ops, ":fu",     LEX_KIND_FU,     NULL);
+    trie_insert(rt.ops, ":return", LEX_KIND_RETURN, NULL);
+    trie_insert(rt.ops, ":exit",   LEX_KIND_EXIT,   NULL);
+    trie_insert(rt.ops, ":end",    LEX_KIND_END,    NULL);
 
-    scopes_put(scopes, NAME("Mat"),   CFUNC(X_Mat));
-    scopes_put(scopes, NAME("Dim"),   CFUNC(X_Dim));
-    scopes_put(scopes, NAME("Trans"), CFUNC(X_Transpose));
-    scopes_put(scopes, NAME("DisAsm"), CFUNC(X_DisAsm));
-    scopes_put(scopes, NAME("Kind"),   CFUNC(X_Kind));
-    scopes_put(scopes, NAME("Rand"),   CFUNC(X_Rand));
+    runtime_put(rt, "sin", MK_CFUNC(X_sin));
+    runtime_put(rt, "cos", MK_CFUNC(X_cos));
+    runtime_put(rt, "tan", MK_CFUNC(X_tan));
 
-    scopes_put(scopes, NAME("pi"), SCALAR(acos(-1)));
+    runtime_put(rt, "asin", MK_CFUNC(X_asin));
+    runtime_put(rt, "acos", MK_CFUNC(X_acos));
+    runtime_put(rt, "atan", MK_CFUNC(X_atan));
 
-    Env *env = env_new(scopes);
+    runtime_put(rt, "ln", MK_CFUNC(X_log));
+    runtime_put(rt, "exp", MK_CFUNC(X_exp));
 
-    bool interactive = false;
-    char *code;
-    size_t ncode;
-    switch (argc - optind) {
-    case 0:
+    runtime_put(rt, "trunc", MK_CFUNC(X_trunc));
+    runtime_put(rt, "floor", MK_CFUNC(X_floor));
+    runtime_put(rt, "ceil", MK_CFUNC(X_ceil));
+    runtime_put(rt, "round", MK_CFUNC(X_round));
+
+    runtime_put(rt, "Mat", MK_CFUNC(X_Mat));
+    runtime_put(rt, "Dim", MK_CFUNC(X_Dim));
+    runtime_put(rt, "Trans", MK_CFUNC(X_Transpose));
+    runtime_put(rt, "DisAsm", MK_CFUNC(X_DisAsm));
+    runtime_put(rt, "Kind", MK_CFUNC(X_Kind));
+    runtime_put(rt, "Rand", MK_CFUNC(X_Rand));
+
+    runtime_put(rt, "Pi", MK_SCL(acos(-1)));
+    runtime_put(rt, "E", MK_SCL(exp(1)));
+
+    if (argc == optind) {
         if (codearg) {
-            code = ls_xstrdup(codearg);
-            ncode = strlen(code);
-        } else {
-            if (iflag || detect_tty()) {
-                interactive = true;
-            } else {
-                if (!(code = full_read(0, &ncode))) {
-                    perror("<stdin>");
-                    goto cleanup;
-                }
-            }
-        }
-        break;
-    case 1:
-        {
-            if (codearg || iflag) {
+            if (iflag) {
                 usage();
             }
-            const int fd = open(argv[optind], O_RDONLY);
-            if (fd < 0) {
-                perror(argv[optind]);
-                goto cleanup;
-            }
-            if (!(code = full_read(fd, &ncode))) {
-                perror(argv[optind]);
-                goto cleanup;
-            }
-            close(fd);
-        }
-        break;
-    default:
-        usage();
-    }
-
-    if (interactive) {
-        while (1) {
-            char *expr = readline("≈≈> ");
-            if (!expr) {
-                fputc('\n', stderr);
+            if (dostring(rt, "(`-c' argument)", codearg, strlen(codearg))) {
                 ret = EXIT_SUCCESS;
-                goto cleanup;
-            }
-            add_history(expr);
-            const size_t nexpr = strlen(expr);
-
-            lexer_reset(lex, expr, nexpr);
-            parser_reset(parser);
-            if (parser_parse_expr(parser)) {
-                size_t nchunk;
-                const Instr *chunk = parser_last_chunk(parser, &nchunk);
-
-                if (dflag) {
-                    disasm_print(chunk, nchunk);
-                } else {
-                    if (!env_eval(env, chunk, nchunk)) {
-                        fprintf(stderr, "%s\n", env_last_error(env));
-                    }
-                }
-            } else {
-                ParserError err = parser_last_error(parser);
-                if (err.has_pos) {
-                    fprintf(stderr, "> %.*s\n", (int) nexpr, expr);
-                    size_t start_pos = err.pos.start - expr;
-                    size_t end_pos = start_pos + err.pos.size;
-                    if (end_pos == start_pos) {
-                        ++end_pos;
-                    }
-                    for (size_t i = 0; i < start_pos; ++i) {
-                        expr[i] = ' ';
-                    }
-                    expr[start_pos] = '^';
-                    for (size_t i = start_pos + 1; i < end_pos; ++i) {
-                        expr[i] = '~';
-                    }
-                    fprintf(stderr, "  %.*s %s\n", (int) end_pos, expr, err.msg);
-                } else {
-                    fprintf(stderr, "%s\n", err.msg);
-                }
-            }
-
-            free(expr);
-        }
-    } else {
-        lexer_reset(lex, code, ncode);
-        parser_reset(parser);
-        if (parser_parse_expr(parser)) {
-            size_t nchunk;
-            const Instr *chunk = parser_last_chunk(parser, &nchunk);
-            if (dflag) {
-                disasm_print(chunk, nchunk);
-                ret = EXIT_SUCCESS;
-            } else {
-                if (env_eval(env, chunk, nchunk)) {
-                    ret = EXIT_SUCCESS;
-                } else {
-                    fprintf(stderr, "%s\n", env_last_error(env));
-                }
             }
         } else {
-            ParserError err = parser_last_error(parser);
-            if (err.has_pos) {
-                const char *pos = err.pos.start;
-                size_t line = 1, column = 1;
-                for (char *ptr = code; ptr != pos; ++ptr) {
-                    if (*ptr == '\n') {
-                        ++line;
-                        column = 1;
-                    } else {
-                        ++column;
-                    }
-                }
-                fprintf(stderr, "%zu:%zu: %s\n", line, column, err.msg);
+            if (iflag || detect_tty()) {
+                interactive(rt);
             } else {
-                fprintf(stderr, "%s\n", err.msg);
+                if (dofd(rt, "(stdin)", 0)) {
+                    ret = EXIT_SUCCESS;
+                }
             }
         }
-        free(code);
+    } else {
+        if (codearg) {
+            usage();
+        }
+        for (int i = optind; i < argc; ++i) {
+            ret = EXIT_SUCCESS;
+            if (!dofile(rt, argv[i])) {
+                ret = EXIT_FAILURE;
+                break;
+            }
+        }
+        if (iflag) {
+            interactive(rt);
+        }
     }
 
-cleanup:
-    trie_traverse(ops, destroy_op, NULL);
-    trie_destroy(ops);
-    lexer_destroy(lex);
-    parser_destroy(parser);
-    scopes_destroy(scopes);
-    env_destroy(env);
+    runtime_destroy(rt);
     return ret;
 }

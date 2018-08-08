@@ -4,6 +4,8 @@
 #include "common.h"
 #include "lexem.h"
 
+#define TRIE_NRESERVE_DEFAULT 128
+
 typedef struct Trie Trie;
 
 Trie *

@@ -21,7 +21,7 @@ void
 parser_reset(Parser *p);
 
 bool
-parser_parse_expr(Parser *p);
+parser_parse(Parser *p);
 
 const Instr *
 parser_last_chunk(Parser *p, size_t *nchunk);
