@@ -82,7 +82,7 @@ Matrices
         1   2   3
         4   5   6
     ]
-    ≈≈> [1; 2,3]
+    ≈≈> [1; 2, 3; 4]
     > [1; 2, 3; 4]
               ^ wrong row length
 
@@ -219,10 +219,10 @@ Built-in functions
   * `Mat(n,m)` creates a new zero-filled `n`-by-`m` matrix
   * `Dim(M)` returns matrix dimensions
   * `Trans(M)` transposes a matrix
-  * `DisAsm(f)`
-  * `Kind(v)` returns type name of `v`
-  * `Rand()` generates a random number in `[0, 1)`.
-  * `Input()` reads a number from stdin.
+  * `DisAsm(f)` disassembles a user-defined function `f`
+  * `Kind(v)` returns the type name of `v` as a string
+  * `Rand()` generates a random number in `[0, 1)`
+  * `Input()` reads a number from stdin
 
 Built-in constants
 ---
