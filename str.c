@@ -49,11 +49,23 @@ str_new_unescape(const char *buf, size_t nbuf)
     return ls_xrealloc(s, sizeof(Str) + s->ndata, 1);
 }
 
+Str *
+str_new_concat(const char *a, size_t na, const char *b, size_t nb)
+{
+    Str *s = ls_xmalloc(sizeof(Str) + na + nb, 1);
+    s->gchdr.nrefs = 1;
+    s->ndata = na + nb;
+    if (na) {
+        memcpy(s->data, a, na);
+    }
+    if (nb) {
+        memcpy(s->data + na, b, nb);
+    }
+    return s;
+}
+
 bool
 str_eq(Str *a, Str *b)
 {
-    return
-        a->ndata == b->ndata &&
-        a->ndata &&
-        memcmp(a->data, b->data, a->ndata) == 0;
+    return a->ndata == b->ndata && a->ndata && memcmp(a->data, b->data, a->ndata) == 0;
 }

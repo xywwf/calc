@@ -382,7 +382,7 @@ Value
 X_Rand(Env *e, const Value *args, unsigned nargs)
 {
     // Not thread-safe. Nobody cares.
-    enum { NBUF = 2048 };
+    enum { NBUF = 1 << 12 };
     static unsigned buf[NBUF];
     static unsigned *cur = buf + NBUF;
     static int fd = -1;
@@ -438,32 +438,38 @@ X_Kind(Env *e, const Value *args, unsigned nargs)
 }
 
 static
-void
-append_str_repr(LSString *buf, Value v)
+const char *
+repr(char *buf, size_t nbuf, size_t *len, Value v)
 {
     switch (v.kind) {
     case VAL_KIND_NIL:
-        ls_string_append_s(buf, "nil");
-        break;
+        *len = snprintf(buf, nbuf, "nil");
+        return buf;
+
     case VAL_KIND_SCALAR:
-        ls_string_append_f(buf, "%.15g", v.as.scalar);
-        break;
+        *len = snprintf(buf, nbuf, "%.15g", v.as.scalar);
+        return buf;
+
     case VAL_KIND_STR:
         {
             Str *s = (Str *) v.as.gcobj;
-            ls_string_append_b(buf, s->data, s->ndata);
+            *len = s->ndata;
+            return s->data;
         }
-        break;
+
     case VAL_KIND_MATRIX:
-        ls_string_append_f(buf, "<matrix %p>", (void *) v.as.gcobj);
-        break;
+        *len = snprintf(buf, nbuf, "<matrix>");
+        return buf;
+
     case VAL_KIND_FUNC:
-        ls_string_append_f(buf, "<function %p>", (void *) v.as.gcobj);
-        break;
+        *len = snprintf(buf, nbuf, "<function>");
+        return buf;
+
     case VAL_KIND_CFUNC:
-        ls_string_append_f(buf, "<build-in function %p>", *(void **) &v.as.gcobj);
-        break;
+        *len = snprintf(buf, nbuf, "<built-in function>");
+        return buf;
     }
+    LS_UNREACHABLE();
 }
 
 static
@@ -471,12 +477,16 @@ Value
 X_concat(Env *e, Value a, Value b)
 {
     (void) e;
-    LSString buf = LS_VECTOR_NEW();
-    append_str_repr(&buf, a);
-    append_str_repr(&buf, b);
-    Str *s = str_new(buf.data, buf.size);
-    LS_VECTOR_FREE(buf);
-    return MK_STR(s);
+
+    char buf_a[32];
+    size_t nsa;
+    const char *sa = repr(buf_a, sizeof(buf_a), &nsa, a);
+
+    char buf_b[32];
+    size_t nsb;
+    const char *sb = repr(buf_b, sizeof(buf_b), &nsb, b);
+
+    return MK_STR(str_new_concat(sa, nsa, sb, nsb));
 }
 
 static
