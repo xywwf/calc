@@ -201,13 +201,8 @@ reverse_chunk(Instr *chunk, size_t nchunk)
 
 static
 size_t
-paramlist(Parser *p)
+paramlist(Parser *p, LexemKind terminator)
 {
-    Lexem lbrace = lexer_next(p->lex);
-    if (lbrace.kind != LEX_KIND_LBRACE) {
-        throw_at(p, lbrace, "expected '('");
-    }
-
     const size_t fu_instr = p->chunk.size;
     INSTR_N(p, CMD_FUNCTION);
 
@@ -217,23 +212,23 @@ paramlist(Parser *p)
         Lexem m = lexer_next(p->lex);
         if (m.kind == LEX_KIND_IDENT) {
             if (!ident_expected && nargs != 0) {
-                throw_at(p, m, "expected ',' or ')'");
+                throw_at(p, m, "expected ',' or end of parameter list");
             }
             ++nargs;
             INSTR(p, CMD_LOCAL, .varname = {.start = m.start, .size = m.size});
             ident_expected = false;
         } else if (m.kind == LEX_KIND_COMMA) {
             if (nargs == 0) {
-                throw_at(p, m, "expected parameter name or ')'");
+                throw_at(p, m, "expected parameter name or end of parameter list");
             }
             ident_expected = true;
-        } else if (m.kind == LEX_KIND_RBRACE) {
+        } else if (m.kind == terminator) {
             if (ident_expected) {
                 throw_at(p, m, "expected parameter name");
             }
             break;
         } else {
-            throw_at(p, m, "expected either parameter name or ',' or ')'");
+            throw_at(p, m, "expected parameter list");
         }
     }
     reverse_chunk(p->chunk.data + fu_instr + 1, nargs);
@@ -442,7 +437,7 @@ expr(Parser *p, int min_priority)
         case LEX_KIND_LAMBDA:
             {
                 THIS_IS_EXPR(p, m);
-                const size_t fu_instr = paramlist(p);
+                const size_t fu_instr = paramlist(p, LEX_KIND_BAR);
                 StopTokenKind s = expr(p, -1);
                 INSTR_N(p, CMD_RETURN);
                 p->chunk.data[fu_instr].args.func.offset = p->chunk.size - fu_instr;
@@ -733,7 +728,12 @@ stmt(Parser *p)
                 throw_at(p, funame, "expected identifier");
             }
 
-            const size_t fu_instr = paramlist(p);
+            Lexem lbrace = lexer_next(p->lex);
+            if (lbrace.kind != LEX_KIND_LBRACE) {
+                throw_at(p, lbrace, "expected '('");
+            }
+
+            const size_t fu_instr = paramlist(p, LEX_KIND_RBRACE);
 
             ++p->func_level;
 

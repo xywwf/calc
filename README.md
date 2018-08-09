@@ -199,7 +199,7 @@ Functions & local variables
 Lambdas
 ---
 
-    ≈≈> d = lambda(x,y) sin(x*y)
+    ≈≈> d = lambda x, y | sin(x*y)
     ≈≈> d(0.5, Pi)
     1
 
