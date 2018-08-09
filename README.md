@@ -128,7 +128,7 @@ Conditions
 ---
     if 2+2 == 2 then
         "Yay symmetry"
-    elif 2+2 == 3
+    elif 2+2 == 3 then
         "It’s three"
     else
         "It’s " ~~ 2+2
@@ -162,6 +162,8 @@ Or, using `for`,
             "Too high"
         end
     end
+
+`next` instruction (== `continue` in some other languages) is also supported.
 
 Functions & local variables
 ---
