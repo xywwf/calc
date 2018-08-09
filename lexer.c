@@ -188,6 +188,7 @@ lexer_next(Lexer *x)
         KEYWORD("return", LEX_KIND_RETURN);
         KEYWORD("exit", LEX_KIND_EXIT);
         KEYWORD("end", LEX_KIND_END);
+        KEYWORD("lambda", LEX_KIND_LAMBDA);
 
 #undef KEYWORD
 
