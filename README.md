@@ -216,12 +216,12 @@ Built-in functions
   * `floor`
   * `ceil`
   * `round`
-  * `Mat(n,m)` creates a new zero-filled `n`-by-`m` matrix
-  * `Dim(M)` returns matrix dimensions
-  * `Trans(M)` transposes a matrix
-  * `DisAsm(f)` disassembles a user-defined function `f`
+  * `Mat(n,m)` returns a new zero-filled `n`-by-`m` matrix
+  * `Dim(M)` returns dimensions of a matrix as `[height, width]`
+  * `Trans(M)` returns the transposition of a matrix
+  * `DisAsm(f)` disassembles a user-defined function
   * `Kind(v)` returns the type name of `v` as a string
-  * `Rand()` generates a random number in `[0, 1)`
+  * `Rand()` returns a random number in `[0, 1)`
   * `Input()` reads a number from stdin
 
 Built-in constants
