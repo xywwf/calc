@@ -1,17 +1,17 @@
-:for i | 1; i<=10; i+1 :do
+for i | 1; i<=10; i+1 do
     i
     i
     i
-    :next
+    next
     i
     i
-    :break
-    i
-    i
-    i
-    i
+    break
     i
     i
     i
     i
-:end
+    i
+    i
+    i
+    i
+end

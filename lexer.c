@@ -55,6 +55,11 @@ lexer_new(Trie *opreg)
     *x = (Lexer) {
         .opreg = opreg,
     };
+
+    trie_insert(opreg, "=",  LEX_KIND_EQ,       NULL);
+    trie_insert(opreg, ":=", LEX_KIND_COLON_EQ, NULL);
+    trie_insert(opreg, "|",  LEX_KIND_BAR,      NULL);
+
     return x;
 }
 
@@ -160,6 +165,31 @@ lexer_next(Lexer *x)
         do {
             ++x->cur;
         } while (x->cur != x->last && is_ident_part(*x->cur));
+
+#define KEYWORD(Lit_, LexKind_) \
+        do { \
+            if (x->cur - r.start == sizeof(Lit_) - 1 && \
+                memcmp(r.start, Lit_, sizeof(Lit_) - 1) == 0) \
+            { \
+                r.kind = LexKind_; \
+            } \
+        } while (0)
+
+        KEYWORD("if", LEX_KIND_IF);
+        KEYWORD("then", LEX_KIND_THEN);
+        KEYWORD("elif", LEX_KIND_ELIF);
+        KEYWORD("else", LEX_KIND_ELSE);
+        KEYWORD("while", LEX_KIND_WHILE);
+        KEYWORD("for", LEX_KIND_FOR);
+        KEYWORD("do", LEX_KIND_DO);
+        KEYWORD("break", LEX_KIND_BREAK);
+        KEYWORD("next", LEX_KIND_NEXT);
+        KEYWORD("fu", LEX_KIND_FU);
+        KEYWORD("return", LEX_KIND_RETURN);
+        KEYWORD("exit", LEX_KIND_EXIT);
+        KEYWORD("end", LEX_KIND_END);
+
+#undef KEYWORD
 
     } else {
         size_t len;

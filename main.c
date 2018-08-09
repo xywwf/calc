@@ -682,24 +682,6 @@ main(int argc, char **argv)
     runtime_reg_op(rt, ">",  BINARY(X_gt, .assoc = OP_ASSOC_LEFT, .priority = 0));
     runtime_reg_op(rt, ">=", BINARY(X_ge, .assoc = OP_ASSOC_LEFT, .priority = 0));
 
-    trie_insert(rt.ops, "=",  LEX_KIND_EQ,       NULL);
-    trie_insert(rt.ops, ":=", LEX_KIND_COLON_EQ, NULL);
-    trie_insert(rt.ops, "|",  LEX_KIND_BAR,      NULL);
-
-    trie_insert(rt.ops, ":if",     LEX_KIND_IF,     NULL);
-    trie_insert(rt.ops, ":then",   LEX_KIND_THEN,   NULL);
-    trie_insert(rt.ops, ":elif",   LEX_KIND_ELIF,   NULL);
-    trie_insert(rt.ops, ":else",   LEX_KIND_ELSE,   NULL);
-    trie_insert(rt.ops, ":while",  LEX_KIND_WHILE,  NULL);
-    trie_insert(rt.ops, ":for",    LEX_KIND_FOR,    NULL);
-    trie_insert(rt.ops, ":do",     LEX_KIND_DO,     NULL);
-    trie_insert(rt.ops, ":break",  LEX_KIND_BREAK,  NULL);
-    trie_insert(rt.ops, ":next",   LEX_KIND_NEXT,   NULL);
-    trie_insert(rt.ops, ":fu",     LEX_KIND_FU,     NULL);
-    trie_insert(rt.ops, ":return", LEX_KIND_RETURN, NULL);
-    trie_insert(rt.ops, ":exit",   LEX_KIND_EXIT,   NULL);
-    trie_insert(rt.ops, ":end",    LEX_KIND_END,    NULL);
-
     runtime_put(rt, "sin", MK_CFUNC(X_sin));
     runtime_put(rt, "cos", MK_CFUNC(X_cos));
     runtime_put(rt, "tan", MK_CFUNC(X_tan));

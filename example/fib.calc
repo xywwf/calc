@@ -1,43 +1,43 @@
-:fu fib_On(n)
+fu fib_On(n)
     a := 0
     b := 1
-    :for i | 1; i <= n; i+1 :do
+    for i | 1; i <= n; i+1 do
         tmp := b
         b = b + a
         a = tmp
-    :end
-    :return b
-:end
+    end
+    return b
+end
 
-:fu fib_On_mat(n)
+fu fib_On_mat(n)
     M := [0, 1; 1, 1]
     v := [0, 1]
-    :for i | 1; i <= n; i+1 :do
+    for i | 1; i <= n; i+1 do
         v := v * M
-    :end
-    :return v[2]
-:end
+    end
+    return v[2]
+end
 
-:fu fib_Ologn_mat(n)
+fu fib_Ologn_mat(n)
     M := [0, 1; 1, 1]
     v := [0, 1]
-    :for n | n; n; n/2 :do
-        :if n % 2 :then
+    for n | n; n; n/2 do
+        if n % 2 then
             v = v * M
             n = n - 1
-        :end
+        end
         M = M * M
-    :end
-    :return v[2]
-:end
+    end
+    return v[2]
+end
 
-:fu collect(f, n)
+fu collect(f, n)
     v := Mat(1, n)
-    :for i | 1; i <= n; i+1 :do
+    for i | 1; i <= n; i+1 do
         v[i] = f(i)
-    :end
-    :return v
-:end
+    end
+    return v
+end
 
 N = 15
 "iterative algorithm, O(N)"

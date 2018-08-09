@@ -1,5 +1,5 @@
-:fu greet(whom)
+fu greet(whom)
     "Hello, " ~~ whom ~~ "!"
-:end
+end
 
 greet("world")
