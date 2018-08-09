@@ -489,6 +489,42 @@ X_concat(Env *e, Value a, Value b)
     return MK_STR(str_new_concat(sa, nsa, sb, nsb));
 }
 
+static int is_interactive;
+
+static
+Value
+X_Input(Env *e, const Value *args, unsigned nargs)
+{
+    (void) args;
+    if (nargs) {
+        env_throw(e, "'Input()' takes no arguments");
+    }
+
+    char *buf;
+    if (is_interactive) {
+        buf = readline("[Input] » ");
+        if (!buf) {
+            goto error;
+        }
+    } else {
+        buf = NULL;
+        size_t capacity = 0;
+        if (getline(&buf, &capacity, stdin) < 0) {
+            if (!feof(stdin)) {
+                perror("getline");
+            }
+            free(buf);
+            goto error;
+        }
+    }
+    const Scalar r = strtod(buf, NULL);
+    free(buf);
+    return MK_SCL(r);
+
+error:
+    env_throw(e, "Input(): reading failed");
+}
+
 static
 bool
 detect_tty(void)
@@ -575,7 +611,7 @@ dofile(Runtime rt, const char *path)
 
 static
 void
-interactive(Runtime rt)
+repl(Runtime rt)
 {
     while (1) {
         char *expr = readline("≈≈> ");
@@ -652,6 +688,8 @@ main(int argc, char **argv)
         }
     }
 
+    is_interactive = detect_tty();
+
     Runtime rt = runtime_new();
     rt.dflag = dflag;
 
@@ -704,6 +742,7 @@ main(int argc, char **argv)
     runtime_put(rt, "DisAsm", MK_CFUNC(X_DisAsm));
     runtime_put(rt, "Kind", MK_CFUNC(X_Kind));
     runtime_put(rt, "Rand", MK_CFUNC(X_Rand));
+    runtime_put(rt, "Input", MK_CFUNC(X_Input));
 
     runtime_put(rt, "Pi", MK_SCL(acos(-1)));
     runtime_put(rt, "E", MK_SCL(exp(1)));
@@ -717,8 +756,8 @@ main(int argc, char **argv)
                 ret = EXIT_SUCCESS;
             }
         } else {
-            if (iflag || detect_tty()) {
-                interactive(rt);
+            if (iflag || is_interactive) {
+                repl(rt);
             } else {
                 if (dofd(rt, "(stdin)", 0)) {
                     ret = EXIT_SUCCESS;
@@ -737,7 +776,7 @@ main(int argc, char **argv)
             }
         }
         if (iflag) {
-            interactive(rt);
+            repl(rt);
         }
     }
 
