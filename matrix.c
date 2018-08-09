@@ -48,8 +48,8 @@ matrix_get2(Env *e, Matrix *m, Value row, Value col)
         env_throw(e, "cannot index matrix with (%s, %s) values",
                   value_kindname(row.kind), value_kindname(col.kind));
     }
-    const size_t i = row.as.scalar;
-    const size_t j = col.as.scalar;
+    const size_t i = AS_SCL(row);
+    const size_t j = AS_SCL(col);
     if (i < 1 || i > m->height) {
         env_throw(e, "row number out of range");
     }

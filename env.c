@@ -11,12 +11,6 @@
 
 #include "libls/vector.h"
 
-#if defined(__GNUC_PATCHLEVEL__) && !defined(__clang_patchlevel__)
-#   define USE_RETARDED_PRAGMAS 1
-#else
-#   define USE_RETARDED_PRAGMAS 0
-#endif
-
 struct Env {
     Scopes *scopes;
     jmp_buf err_handler;
@@ -33,38 +27,49 @@ env_new(Scopes *scopes)
     return e;
 }
 
-#if USE_RETARDED_PRAGMAS
-#   pragma GCC diagnostic push
-#   pragma GCC diagnostic ignored "-Wclobbered"
-#endif
 bool
-env_eval(Env *e, const Instr *chunk, size_t nchunk)
+env_eval(Env *e, const Instr *const chunk, size_t nchunk)
 {
     (void) nchunk;
     Scopes *scopes = e->scopes;
     scopes_push(scopes); // chunk-local scope
-    bool ok = true;
+    bool ok = false;
     LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
     LS_VECTOR_OF(const Instr *) callstack = LS_VECTOR_NEW();
+
+    Value        *volatile data1;
+    size_t        volatile size1;
+    Instr const **volatile data2;
+    size_t        volatile size2;
+
+#define FLUSH() \
+    do { \
+        data1 = stack.data; \
+        size1 = stack.size; \
+        data2 = callstack.data; \
+        size2 = callstack.size; \
+    } while (0)
+
+#define DONE() \
+    do { \
+        FLUSH(); \
+        goto do_not_goto_me; /* this is OK: the "implementation" is allowed to goto this label */ \
+    } while (0)
+
+    if (setjmp(e->err_handler) != 0) {
+        goto do_not_goto_me; // this is OK: the "implementation" is allowed to goto this label
+    }
 
 #define ERR(...) \
     do { \
         snprintf(e->err, sizeof(e->err), __VA_ARGS__); \
-        ok = false; \
-        goto done; \
+        DONE(); \
     } while (0)
 
-#define PROTECT() \
-    do { \
-        if (setjmp(e->err_handler) != 0) { \
-            ok = false; \
-            goto done; \
-        } \
-    } while (0)
+#define PROTECT FLUSH
 
-    (void) nchunk;
-    while (1) {
-        Instr in = *chunk;
+    for (const Instr *site = chunk; ;) {
+        Instr in = *site;
         switch (in.cmd) {
         case CMD_PRINT:
             {
@@ -205,16 +210,7 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
         case CMD_CALL:
             {
                 Value *ptr = stack.data + stack.size - in.args.nargs - 1;
-
-#if USE_RETARDED_PRAGMAS
-#   pragma GCC diagnostic push
-#   pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
                 Value func = ptr[0];
-#if USE_RETARDED_PRAGMAS
-#   pragma GCC diagnostic pop
-#endif
-
                 switch (func.kind) {
                 case VAL_KIND_CFUNC:
                     {
@@ -237,8 +233,8 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                             ERR("wrong # of arguments");
                         }
                         scopes_push(scopes);
-                        LS_VECTOR_PUSH(callstack, chunk);
-                        chunk = f->chunk;
+                        LS_VECTOR_PUSH(callstack, site + 1);
+                        site = f->chunk;
                     }
                     continue;
 
@@ -267,16 +263,16 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             break;
 
         case CMD_JUMP:
-            chunk += in.args.offset;
+            site += in.args.offset;
             continue;
 
         case CMD_JUMP_UNLESS:
             {
                 Value condition = stack.data[stack.size - 1];
                 if (!value_is_truthy(condition)) {
-                    chunk += in.args.offset;
+                    site += in.args.offset;
                 } else {
-                    ++chunk;
+                    ++site;
                 }
 
                 --stack.size;
@@ -288,16 +284,17 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
             {
                 Func *f = func_new(
                     in.args.func.nargs,
-                    chunk + 1,
+                    site + 1,
                     in.args.func.offset - 1);
                 LS_VECTOR_PUSH(stack, MK_FUNC(f));
-                chunk += in.args.func.offset;
+                site += in.args.func.offset;
             }
             continue;
 
         case CMD_EXIT:
             if (!callstack.size) {
-                goto done;
+                ok = true;
+                DONE();
             }
             LS_VECTOR_PUSH(stack, MK_NIL());
             // fall through
@@ -307,33 +304,32 @@ env_eval(Env *e, const Instr *chunk, size_t nchunk)
                 value_unref(stack.data[stack.size - 2]);
                 stack.data[stack.size - 2] = stack.data[stack.size - 1];
                 --stack.size;
-                chunk = callstack.data[callstack.size - 1] + 1;
+                site = callstack.data[callstack.size - 1];
                 --callstack.size;
             }
             continue;
         }
 
-        ++chunk;
+        ++site;
     }
 
-done:
+do_not_goto_me:
     scopes_pop(scopes); // pop the chunk-local scope
     if (ok) {
-        assert(!stack.size);
-        assert(!callstack.size);
+        assert(!size1);
+        assert(!size2);
     }
-    for (size_t i = 0; i < stack.size; ++i) {
-        value_unref(stack.data[i]);
+    for (size_t i = 0; i < size1; ++i) {
+        value_unref(data1[i]);
     }
-    LS_VECTOR_FREE(stack);
-    LS_VECTOR_FREE(callstack);
+    free(data1);
+    free(data2);
     return ok;
 #undef ERR
+#undef DONE
+#undef FLUSH
 #undef PROTECT
 }
-#if USE_RETARDED_PRAGMAS
-#   pragma GCC diagnostic pop
-#endif
 
 void
 env_throw(Env *e, const char *fmt, ...)
