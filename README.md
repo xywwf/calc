@@ -15,6 +15,10 @@ By notation, x•x•x = x³.
 Operators
 ---
 
+- “Set-tish”:
+  * `==`
+  * `!=`
+
 - “Magmatic”:
   * `+`
 
@@ -38,8 +42,6 @@ Operators
 
 - “Relative”:
 
-  * `==`
-  * `!=`
   * `<`
   * `>`
   * `<=`
