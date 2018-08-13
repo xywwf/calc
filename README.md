@@ -235,6 +235,4 @@ Built-in constants
 Caveats
 ===
 
-- It’s dynamically scoped, and every time a variable is mentioned, a hash table lookup is done.
-
 - There’s no specialized memory allocator. Link with jemalloc or something if you have to.

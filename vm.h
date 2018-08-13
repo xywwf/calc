@@ -10,11 +10,15 @@ typedef enum {
     CMD_PRINT,
     CMD_LOAD_SCALAR,
     CMD_LOAD_STR,
+
+    CMD_LOAD_FAST,
     CMD_LOAD,
-    CMD_STORE,
-    CMD_LOCAL,
     CMD_LOAD_AT,
+
+    CMD_STORE_FAST,
+    CMD_STORE,
     CMD_STORE_AT,
+
     CMD_OP_UNARY,
     CMD_OP_BINARY,
     CMD_CALL,
@@ -38,7 +42,10 @@ typedef struct {
             size_t size;
         } str;
 
-        // CMD_LOAD, CMD_STORE, CMD_LOCAL
+        // CMD_LOAD_FAST, CMD_STORE_FAST
+        size_t index;
+
+        // CMD_LOAD, CMD_STORE
         struct {
             const char *start;
             size_t size;
@@ -68,6 +75,7 @@ typedef struct {
         // CMD_FUNCTION
         struct {
             unsigned nargs;
+            unsigned nlocals;
             ssize_t offset;
         } func;
     } args;

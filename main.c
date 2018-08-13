@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <time.h>
 
 #include "runtime.h"
 #include "op.h"
@@ -526,6 +527,17 @@ error:
 }
 
 static
+Value
+X_Clock(Env *e, const Value *args, unsigned nargs)
+{
+    (void) args;
+    if (nargs != 0) {
+        env_throw(e, "'Clock' takes no arguments");
+    }
+    return MK_SCL(clock() / (Scalar) CLOCKS_PER_SEC);
+}
+
+static
 bool
 detect_tty(void)
 {
@@ -743,6 +755,8 @@ main(int argc, char **argv)
     runtime_put(rt, "Kind", MK_CFUNC(X_Kind));
     runtime_put(rt, "Rand", MK_CFUNC(X_Rand));
     runtime_put(rt, "Input", MK_CFUNC(X_Input));
+
+    runtime_put(rt, "Clock", MK_CFUNC(X_Clock));
 
     runtime_put(rt, "Pi", MK_SCL(acos(-1)));
     runtime_put(rt, "E", MK_SCL(exp(1)));

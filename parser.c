@@ -6,6 +6,7 @@
 #include "value.h"
 #include "op.h"
 #include "vm.h"
+#include "ht.h"
 
 typedef LS_VECTOR_OF(Instr) Chunk;
 
@@ -72,6 +73,7 @@ struct Parser {
     FixupStack fixup_cond;
     FixupStack fixup_loop_break;
     FixupStack fixup_loop_next;
+    LS_VECTOR_OF(Ht *) locals;
     size_t func_level;
     jmp_buf err_handler;
     ParserError err;
@@ -88,6 +90,7 @@ parser_new(Lexer *lex)
         .fixup_cond = LS_VECTOR_NEW(),
         .fixup_loop_break = LS_VECTOR_NEW(),
         .fixup_loop_next = LS_VECTOR_NEW(),
+        .locals = LS_VECTOR_NEW(),
     };
     return p;
 }
@@ -101,6 +104,12 @@ parser_reset(Parser *p)
     fixup_stack_clear(&p->fixup_cond);
     fixup_stack_clear(&p->fixup_loop_break);
     fixup_stack_clear(&p->fixup_loop_next);
+
+    for (size_t i = 0; i < p->locals.size; ++i) {
+        ht_destroy(p->locals.data[i]);
+    }
+    LS_VECTOR_CLEAR(p->locals);
+
     p->func_level = 0;
 }
 
@@ -162,6 +171,57 @@ throw_there(Parser *p, const char *msg)
         } \
     } while (0)
 
+static
+Instr
+assignment(Parser *p, const char *name, size_t nname, bool local)
+{
+    if (p->locals.size) {
+        Ht *h = p->locals.data[p->locals.size - 1];
+        if (local) {
+            const size_t index = ht_put(h, name, nname, ht_size(h));
+            return (Instr) {
+                .cmd = CMD_STORE_FAST,
+                .args = {.index = index},
+            };
+        } else {
+            const HtValue val = ht_get(h, name, nname);
+            if (val != HT_NO_VALUE) {
+                return (Instr) {
+                    .cmd = CMD_STORE_FAST,
+                    .args = {.index = val},
+                };
+            }
+        }
+    }
+    return (Instr) {
+        .cmd = CMD_STORE,
+        .args = {.varname = {
+            .start = name,
+            .size = nname,
+        }},
+    };
+}
+
+static
+void
+bind_vars(Parser *p, size_t from)
+{
+    assert(p->locals.size);
+    Ht *h = p->locals.data[p->locals.size - 1];
+    for (size_t i = from; i < p->chunk.size; ++i) {
+        const Instr in = p->chunk.data[i];
+        if (in.cmd != CMD_LOAD) {
+            continue;
+        }
+        const HtValue val = ht_get(h, in.args.varname.start, in.args.varname.size);
+        if (val != HT_NO_VALUE) {
+            p->chunk.data[i] = (Instr) {
+                .cmd = CMD_LOAD_FAST,
+                .args = {.index = val},
+            };
+        }
+    }
+}
 
 // forward declaration
 static inline
@@ -189,22 +249,13 @@ row(Parser *p, unsigned *width)
 }
 
 static
-void
-reverse_chunk(Instr *chunk, size_t nchunk)
-{
-    for (size_t i = 0; i < nchunk / 2; ++i) {
-        Instr tmp = chunk[i];
-        chunk[i] = chunk[nchunk - i - 1];
-        chunk[nchunk - i - 1] = tmp;
-    }
-}
-
-static
 size_t
 paramlist(Parser *p, LexemKind terminator)
 {
     const size_t fu_instr = p->chunk.size;
     INSTR_N(p, CMD_FUNCTION);
+
+    Ht *h = p->locals.data[p->locals.size - 1];
 
     unsigned nargs = 0;
     bool ident_expected = false;
@@ -214,8 +265,8 @@ paramlist(Parser *p, LexemKind terminator)
             if (!ident_expected && nargs != 0) {
                 throw_at(p, m, "expected ',' or end of parameter list");
             }
+            ht_put(h, m.start, m.size, nargs);
             ++nargs;
-            INSTR(p, CMD_LOCAL, .varname = {.start = m.start, .size = m.size});
             ident_expected = false;
         } else if (m.kind == LEX_KIND_COMMA) {
             if (nargs == 0) {
@@ -231,7 +282,6 @@ paramlist(Parser *p, LexemKind terminator)
             throw_at(p, m, "expected parameter list");
         }
     }
-    reverse_chunk(p->chunk.data + fu_instr + 1, nargs);
     p->chunk.data[fu_instr].args.func.nargs = nargs;
     return fu_instr;
 }
@@ -433,16 +483,6 @@ expr(Parser *p, int min_priority)
             AFTER_EXPR(p, m);
             p->expr_end = false;
             return STOP_TOK_DO;
-
-        case LEX_KIND_LAMBDA:
-            {
-                THIS_IS_EXPR(p, m);
-                const size_t fu_instr = paramlist(p, LEX_KIND_BAR);
-                StopTokenKind s = expr(p, -1);
-                INSTR_N(p, CMD_RETURN);
-                p->chunk.data[fu_instr].args.func.offset = p->chunk.size - fu_instr;
-                return s;
-            }
 
         case LEX_KIND_IF:
         case LEX_KIND_ELIF:
@@ -647,7 +687,7 @@ stmt(Parser *p)
             if (expr(p, -1) != STOP_TOK_SEMICOLON) {
                 throw_there(p, "expected ';'");
             }
-            INSTR(p, CMD_LOCAL, .varname = {.start = var.start, .size = var.size});
+            LS_VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
 
             // loop condition
             const size_t check_instr = p->chunk.size;
@@ -664,7 +704,7 @@ stmt(Parser *p)
             if (expr(p, -1) != STOP_TOK_DO) {
                 throw_there(p, "expected 'do'");
             }
-            INSTR(p, CMD_LOCAL, .varname = {.start = var.start, .size = var.size});
+            LS_VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
             swap_chunks(p);
 
             // loop body
@@ -733,9 +773,11 @@ stmt(Parser *p)
                 throw_at(p, lbrace, "expected '('");
             }
 
-            const size_t fu_instr = paramlist(p, LEX_KIND_RBRACE);
-
+            Ht *h = ht_new(2);
+            LS_VECTOR_PUSH(p->locals, h);
             ++p->func_level;
+
+            const size_t fu_instr = paramlist(p, LEX_KIND_RBRACE);
 
             StopTokenKind s;
             while ((s = stmt(p)) == STOP_TOK_SEMICOLON) {}
@@ -743,10 +785,15 @@ stmt(Parser *p)
                 throw_there(p, "expected 'end'");
             }
 
+            bind_vars(p, fu_instr);
+            const size_t nlocals = ht_size(h);
             --p->func_level;
+            ht_destroy(h);
+            --p->locals.size;
 
             INSTR_N(p, CMD_EXIT);
             p->chunk.data[fu_instr].args.func.offset = p->chunk.size - fu_instr;
+            p->chunk.data[fu_instr].args.func.nlocals = nlocals;
 
             INSTR(p, CMD_STORE, .varname = {.start = funame.start, .size = funame.size});
 
@@ -769,7 +816,11 @@ stmt(Parser *p)
                     Instr last = p->chunk.data[p->chunk.size - 1];
                     switch (last.cmd) {
                     case CMD_LOAD:
-                        last.cmd = s == STOP_TOK_EQ ? CMD_STORE : CMD_LOCAL;
+                        last = assignment(
+                            p,
+                            last.args.varname.start,
+                            last.args.varname.size,
+                            s == STOP_TOK_COLON_EQ);
                         break;
                     case CMD_LOAD_AT:
                         if (s == STOP_TOK_EQ) {
@@ -836,5 +887,11 @@ parser_destroy(Parser *p)
     fixup_stack_free(p->fixup_cond);
     fixup_stack_free(p->fixup_loop_break);
     fixup_stack_free(p->fixup_loop_next);
+
+    for (size_t i = 0; i < p->locals.size; ++i) {
+        ht_destroy(p->locals.data[i]);
+    }
+    LS_VECTOR_FREE(p->locals);
+
     free(p);
 }

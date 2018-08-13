@@ -11,8 +11,7 @@ runtime_new(void)
     r.ops = trie_new(TRIE_NRESERVE_DEFAULT);
     r.lexer = lexer_new(r.ops);
     r.parser = parser_new(r.lexer);
-    r.scopes = scopes_new();
-    r.env = env_new(r.scopes);
+    r.env = env_new();
     return r;
 }
 
@@ -35,7 +34,7 @@ runtime_reg_ambig_op(Runtime r, const char *sym, Op prefix, Op infix)
 void
 runtime_put(Runtime r, const char *name, Value value)
 {
-    scopes_put(r.scopes, name, strlen(name), value);
+    env_put(r.env, name, strlen(name), value);
 }
 
 ExecError
@@ -95,6 +94,5 @@ runtime_destroy(Runtime r)
     trie_destroy(r.ops);
     lexer_destroy(r.lexer);
     parser_destroy(r.parser);
-    scopes_destroy(r.scopes);
     env_destroy(r.env);
 }

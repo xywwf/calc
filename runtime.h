@@ -9,14 +9,12 @@
 #include "trie.h"
 #include "lexer.h"
 #include "parser.h"
-#include "scopes.h"
 #include "env.h"
 
 typedef struct {
     Trie *ops;
     Lexer *lexer;
     Parser *parser;
-    Scopes *scopes;
     Env *env;
     bool dflag;
 } Runtime;

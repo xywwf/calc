@@ -10,13 +10,14 @@
 typedef struct {
     GcObject gchdr;
     unsigned nargs;
+    unsigned nlocals;
     char * strdups;
     size_t nchunk;
     Instr chunk[];
 } Func;
 
 Func *
-func_new(unsigned nargs, const Instr *chunk, size_t nchunk);
+func_new(unsigned nargs, unsigned nlocals, const Instr *chunk, size_t nchunk);
 
 void
 func_destroy(Func *f);

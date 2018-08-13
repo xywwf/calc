@@ -3,11 +3,12 @@
 #include <string.h>
 
 Func *
-func_new(unsigned nargs, const Instr *chunk, size_t nchunk)
+func_new(unsigned nargs, unsigned nlocals, const Instr *chunk, size_t nchunk)
 {
     Func *f = ls_xmalloc(sizeof(Func) + nchunk * sizeof(Instr), 1);
     f->gchdr.nrefs = 1;
     f->nargs = nargs;
+    f->nlocals = nlocals;
     f->nchunk = nchunk;
     memcpy(f->chunk, chunk, nchunk * sizeof(Instr));
 
@@ -18,7 +19,6 @@ func_new(unsigned nargs, const Instr *chunk, size_t nchunk)
         switch (f->chunk[i].cmd) { \
             case CMD_LOAD: \
             case CMD_STORE: \
-            case CMD_LOCAL: \
                 X(f->chunk[i].args.varname.start, f->chunk[i].args.varname.size); \
                 break; \
             case CMD_LOAD_STR: \

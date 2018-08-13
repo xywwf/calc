@@ -1,5 +1,5 @@
+#include "ht.h"
 #include "env.h"
-#include "scopes.h"
 #include "func.h"
 #include "matrix.h"
 #include "str.h"
@@ -11,36 +11,54 @@
 
 #include "libls/vector.h"
 
+typedef struct {
+    const Instr *site;
+    size_t stackpos;
+} Callsite;
+
 struct Env {
-    Scopes *scopes;
+    LS_VECTOR_OF(Value) gs;
+    Ht *gt;
     jmp_buf err_handler;
     char err[1024];
 };
 
 Env *
-env_new(Scopes *scopes)
+env_new(void)
 {
     Env *e = LS_XNEW(Env, 1);
     *e = (Env) {
-        .scopes = scopes,
+        .gs = LS_VECTOR_NEW(),
+        .gt = ht_new(6),
     };
     return e;
+}
+
+void
+env_put(Env *e, const char *name, size_t nname, Value value)
+{
+    value_ref(value);
+    const HtValue res = ht_put(e->gt, name, nname, e->gs.size);
+    if (res == e->gs.size) {
+        LS_VECTOR_PUSH(e->gs, value);
+    } else {
+        value_unref(e->gs.data[res]);
+        e->gs.data[res] = value;
+    }
 }
 
 bool
 env_eval(Env *e, const Instr *const chunk, size_t nchunk)
 {
     (void) nchunk;
-    Scopes *scopes = e->scopes;
-    scopes_push(scopes); // chunk-local scope
-    bool ok = false;
+    volatile bool ok = false;
     LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
-    LS_VECTOR_OF(const Instr *) callstack = LS_VECTOR_NEW();
+    LS_VECTOR_OF(Callsite) callstack = LS_VECTOR_NEW();
 
-    Value        *volatile data1;
-    size_t        volatile size1;
-    Instr const **volatile data2;
-    size_t        volatile size2;
+    Value    *volatile data1;
+    size_t    volatile size1;
+    Callsite *volatile data2;
+    size_t    volatile size2;
 
 #define FLUSH() \
     do { \
@@ -94,30 +112,50 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
 
         case CMD_LOAD:
             {
-                Value value;
-                if (!scopes_get(scopes, in.args.varname.start, in.args.varname.size, &value)) {
+                HtValue index = ht_get(e->gt, in.args.varname.start, in.args.varname.size);
+                if (index == HT_NO_VALUE) {
                     ERR("undefined variable '%.*s'",
                         (int) in.args.varname.size, in.args.varname.start);
                 }
+                Value value = e->gs.data[index];
+                value_ref(value);
+                LS_VECTOR_PUSH(stack, value);
+            }
+            break;
+
+        case CMD_LOAD_FAST:
+            {
+                const size_t prev_pos = callstack.data[callstack.size - 1].stackpos;
+                Value value = stack.data[prev_pos + in.args.index];
+
+                value_ref(value);
                 LS_VECTOR_PUSH(stack, value);
             }
             break;
 
         case CMD_STORE:
             {
-                Value value = stack.data[stack.size - 1];
-                scopes_put(scopes, in.args.varname.start, in.args.varname.size, value);
-                --stack.size;
-                value_unref(value);
+                Value value = stack.data[--stack.size];
+                const HtValue res = ht_put(
+                    e->gt,
+                    in.args.varname.start,
+                    in.args.varname.size,
+                    e->gs.size);
+                if (res == e->gs.size) {
+                    LS_VECTOR_PUSH(e->gs, value);
+                } else {
+                    value_unref(e->gs.data[res]);
+                    e->gs.data[res] = value;
+                }
             }
             break;
 
-        case CMD_LOCAL:
+        case CMD_STORE_FAST:
             {
-                Value value = stack.data[stack.size - 1];
-                scopes_put_local(scopes, in.args.varname.start, in.args.varname.size, value);
-                --stack.size;
-                value_unref(value);
+                const size_t prev_pos = callstack.data[callstack.size - 1].stackpos;
+                const size_t index = prev_pos + in.args.index;
+                value_unref(stack.data[index]);
+                stack.data[index] = stack.data[--stack.size];
             }
             break;
 
@@ -232,8 +270,16 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
                         if (in.args.nargs != f->nargs) {
                             ERR("wrong # of arguments");
                         }
-                        scopes_push(scopes);
-                        LS_VECTOR_PUSH(callstack, site + 1);
+
+                        LS_VECTOR_PUSH(callstack, ((Callsite) {
+                            .site = site + 1,
+                            .stackpos = stack.size - f->nargs,
+                        }));
+
+                        for (unsigned i = f->nlocals - f->nargs; i; --i) {
+                            LS_VECTOR_PUSH(stack, MK_NIL());
+                        }
+
                         site = f->chunk;
                     }
                     continue;
@@ -284,6 +330,7 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
             {
                 Func *f = func_new(
                     in.args.func.nargs,
+                    in.args.func.nlocals,
                     site + 1,
                     in.args.func.offset - 1);
                 LS_VECTOR_PUSH(stack, MK_FUNC(f));
@@ -300,12 +347,18 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
             // fall through
         case CMD_RETURN:
             {
-                scopes_pop(scopes);
-                value_unref(stack.data[stack.size - 2]);
-                stack.data[stack.size - 2] = stack.data[stack.size - 1];
-                --stack.size;
-                site = callstack.data[callstack.size - 1];
-                --callstack.size;
+                Callsite prev = callstack.data[--callstack.size];
+
+                Value result = stack.data[--stack.size];
+
+                for (size_t i = prev.stackpos - 1; i < stack.size; ++i) {
+                    value_unref(stack.data[i]);
+                }
+
+                stack.data[prev.stackpos - 1] = result;
+                stack.size = prev.stackpos;
+
+                site = prev.site;
             }
             continue;
         }
@@ -314,7 +367,6 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
     }
 
 do_not_goto_me:
-    scopes_pop(scopes); // pop the chunk-local scope
     if (ok) {
         assert(!size1);
         assert(!size2);
@@ -350,5 +402,10 @@ env_last_error(Env *e)
 void
 env_destroy(Env *e)
 {
+    ht_destroy(e->gt);
+    for (size_t i = 0; i < e->gs.size; ++i) {
+        value_unref(e->gs.data[i]);
+    }
+    LS_VECTOR_FREE(e->gs);
     free(e);
 }

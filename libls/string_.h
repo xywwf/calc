@@ -71,47 +71,6 @@ ls_string_append_c(LSString *s, char c)
     LS_VECTOR_PUSH(*s, c);
 }
 
-// Appends a formatted string to /s/. Returns /true/ on success or /false/ if an encoding error
-// occurs.
-bool
-ls_string_append_vf(LSString *s, const char *fmt, va_list vl);
-
-// Appends a formatted string to /s/. Returns /true/ on success or /false/ if an encoding error
-// occurs.
-LS_INHEADER LS_ATTR_PRINTF(2, 3)
-bool
-ls_string_append_f(LSString *s, const char *fmt, ...)
-{
-    va_list vl;
-    va_start(vl, fmt);
-    bool r = ls_string_append_vf(s, fmt, vl);
-    va_end(vl);
-    return r;
-}
-
-// Assigns a formatted string value to /s/. Returns /true/ on success or /false/ if an encoding
-// error occurs.
-LS_INHEADER
-bool
-ls_string_assign_vf(LSString *s, const char *fmt, va_list vl)
-{
-    LS_VECTOR_CLEAR(*s);
-    return ls_string_append_vf(s, fmt, vl);
-}
-
-// Assigns a formatted string value to /s/. Returns /true/ on success or /false/ if an encoding
-// error occurs.
-LS_INHEADER LS_ATTR_PRINTF(2, 3)
-bool
-ls_string_assign_f(LSString *s, const char *fmt, ...)
-{
-    va_list vl;
-    va_start(vl, fmt);
-    bool r = ls_string_assign_vf(s, fmt, vl);
-    va_end(vl);
-    return r;
-}
-
 // Constructs a new /LSString/ initialized with a value of the zero-terminated string /cstr/.
 LS_INHEADER
 LSString
@@ -141,30 +100,6 @@ ls_string_new_from_c(char c)
     LSString r = LS_VECTOR_NEW();
     LS_VECTOR_PUSH(r, c);
     return r;
-}
-
-// Constructs a new /LSString/ initialized with a formatted string value.
-LS_INHEADER
-LSString
-ls_string_new_from_vf(const char *fmt, va_list vl)
-{
-    LSString s = LS_VECTOR_NEW();
-    bool r = ls_string_append_vf(&s, fmt, vl);
-    (void) r;
-    assert(r);
-    return s;
-}
-
-// Constructs a new /LSString/ initialized with a formatted string value.
-LS_INHEADER
-LSString
-ls_string_new_from_f(const char *fmt, ...)
-{
-    va_list vl;
-    va_start(vl, fmt);
-    LSString s = ls_string_new_from_vf(fmt, vl);
-    va_end(vl);
-    return s;
 }
 
 #endif

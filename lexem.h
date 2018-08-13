@@ -35,7 +35,6 @@ typedef enum {
     LEX_KIND_RETURN,
     LEX_KIND_EXIT,
     LEX_KIND_END,
-    LEX_KIND_LAMBDA,
 } LexemKind;
 
 typedef struct {

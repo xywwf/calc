@@ -5,12 +5,14 @@
 #include "lexem.h"
 #include "value.h"
 #include "vm.h"
-#include "scopes.h"
 
 typedef struct Env Env;
 
 Env *
-env_new(Scopes *s);
+env_new(void);
+
+void
+env_put(Env *e, const char *name, size_t nname, Value value);
 
 bool
 env_eval(Env *e, const Instr *chunk, size_t nchunk);
