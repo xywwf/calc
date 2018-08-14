@@ -86,13 +86,13 @@ void
 value_unref(Value v)
 {
     switch (v.kind) {
-    //case VAL_KIND_MATRIX:
-    //case VAL_KIND_FUNC:
-    //case VAL_KIND_STR:
-    //    if (!--v.as.gcobj->nrefs) {
-    //        gcobject_destroy(v);
-    //    }
-    //    break;
+    case VAL_KIND_MATRIX:
+    case VAL_KIND_FUNC:
+    case VAL_KIND_STR:
+        if (!--v.as.gcobj->nrefs) {
+            gcobject_destroy(v);
+        }
+        break;
     default:
         break;
     }

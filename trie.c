@@ -16,15 +16,13 @@ struct Trie {
     size_t capacity;
 };
 
-static
+static inline
 void *
 x2realloc0(void *p, size_t *pnelems, size_t elemsz)
 {
     const size_t oldnelems = *pnelems;
     p = ls_x2realloc(p, pnelems, elemsz);
-    if (elemsz) {
-        memset((char *) p + elemsz * oldnelems, 0, elemsz * (*pnelems - oldnelems));
-    }
+    memset((char *) p + elemsz * oldnelems, 0, elemsz * (*pnelems - oldnelems));
     return p;
 }
 

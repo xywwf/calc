@@ -36,20 +36,14 @@ typedef struct {
         // CMD_LOAD_SCALAR
         Scalar scalar;
 
-        // CMD_LOAD_STR
+        // CMD_LOAD_STR, CMD_LOAD, CMD_STORE
         struct {
             const char *start;
             size_t size;
         } str;
 
         // CMD_LOAD_FAST, CMD_STORE_FAST
-        size_t index;
-
-        // CMD_LOAD, CMD_STORE
-        struct {
-            const char *start;
-            size_t size;
-        } varname;
+        unsigned index;
 
         // CMD_LOAD_AT, CMD_STORE_AT
         unsigned nindices;
@@ -70,13 +64,13 @@ typedef struct {
         } dims;
 
         // CMD_JUMP, CMD_JUMP_UNLESS
-        ssize_t offset;
+        int offset;
 
         // CMD_FUNCTION
         struct {
             unsigned nargs;
             unsigned nlocals;
-            ssize_t offset;
+            int offset;
         } func;
     } args;
 } Instr;

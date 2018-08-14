@@ -19,8 +19,6 @@ func_new(unsigned nargs, unsigned nlocals, const Instr *chunk, size_t nchunk)
         switch (f->chunk[i].cmd) { \
             case CMD_LOAD: \
             case CMD_STORE: \
-                X(f->chunk[i].args.varname.start, f->chunk[i].args.varname.size); \
-                break; \
             case CMD_LOAD_STR: \
                 X(f->chunk[i].args.str.start, f->chunk[i].args.str.size); \
                 break; \

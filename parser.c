@@ -195,7 +195,7 @@ assignment(Parser *p, const char *name, size_t nname, bool local)
     }
     return (Instr) {
         .cmd = CMD_STORE,
-        .args = {.varname = {
+        .args = {.str = {
             .start = name,
             .size = nname,
         }},
@@ -213,7 +213,7 @@ bind_vars(Parser *p, size_t from)
         if (in.cmd != CMD_LOAD) {
             continue;
         }
-        const HtValue val = ht_get(h, in.args.varname.start, in.args.varname.size);
+        const HtValue val = ht_get(h, in.args.str.start, in.args.str.size);
         if (val != HT_NO_VALUE) {
             p->chunk.data[i] = (Instr) {
                 .cmd = CMD_LOAD_FAST,
@@ -319,7 +319,7 @@ expr(Parser *p, int min_priority)
         case LEX_KIND_IDENT:
             {
                 THIS_IS_EXPR(p, m);
-                INSTR(p, CMD_LOAD, .varname = {.start = m.start, .size = m.size});
+                INSTR(p, CMD_LOAD, .str = {.start = m.start, .size = m.size});
                 p->expr_end = true;
             }
             break;
@@ -786,16 +786,18 @@ stmt(Parser *p)
             }
 
             bind_vars(p, fu_instr);
-            const size_t nlocals = ht_size(h);
+            const size_t nlocalstbl = ht_size(h);
             --p->func_level;
             ht_destroy(h);
             --p->locals.size;
 
             INSTR_N(p, CMD_EXIT);
-            p->chunk.data[fu_instr].args.func.offset = p->chunk.size - fu_instr;
-            p->chunk.data[fu_instr].args.func.nlocals = nlocals;
 
-            INSTR(p, CMD_STORE, .varname = {.start = funame.start, .size = funame.size});
+            Instr *fu = &p->chunk.data[fu_instr];
+            fu->args.func.offset = p->chunk.size - fu_instr;
+            fu->args.func.nlocals = nlocalstbl - fu->args.func.nargs;
+
+            LS_VECTOR_PUSH(p->chunk, assignment(p, funame.start, funame.size, true));
 
             return end_of_stmt(p);
         }
@@ -818,8 +820,8 @@ stmt(Parser *p)
                     case CMD_LOAD:
                         last = assignment(
                             p,
-                            last.args.varname.start,
-                            last.args.varname.size,
+                            last.args.str.start,
+                            last.args.str.size,
                             s == STOP_TOK_COLON_EQ);
                         break;
                     case CMD_LOAD_AT:

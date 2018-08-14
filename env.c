@@ -112,10 +112,9 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
 
         case CMD_LOAD:
             {
-                HtValue index = ht_get(e->gt, in.args.varname.start, in.args.varname.size);
+                HtValue index = ht_get(e->gt, in.args.str.start, in.args.str.size);
                 if (index == HT_NO_VALUE) {
-                    ERR("undefined variable '%.*s'",
-                        (int) in.args.varname.size, in.args.varname.start);
+                    ERR("undefined variable '%.*s'", (int) in.args.str.size, in.args.str.start);
                 }
                 Value value = e->gs.data[index];
                 value_ref(value);
@@ -136,11 +135,7 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
         case CMD_STORE:
             {
                 Value value = stack.data[--stack.size];
-                const HtValue res = ht_put(
-                    e->gt,
-                    in.args.varname.start,
-                    in.args.varname.size,
-                    e->gs.size);
+                const HtValue res = ht_put(e->gt, in.args.str.start, in.args.str.size, e->gs.size);
                 if (res == e->gs.size) {
                     LS_VECTOR_PUSH(e->gs, value);
                 } else {
@@ -276,7 +271,7 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
                             .stackpos = stack.size - f->nargs,
                         }));
 
-                        for (unsigned i = f->nlocals - f->nargs; i; --i) {
+                        for (unsigned i = 0; i < f->nlocals; ++i) {
                             LS_VECTOR_PUSH(stack, MK_NIL());
                         }
 
@@ -292,7 +287,7 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
 
         case CMD_MATRIX:
             {
-                const size_t nelems = in.args.dims.height * in.args.dims.width;
+                const size_t nelems = (size_t) in.args.dims.height * in.args.dims.width;
 
                 // <danger>
                 PROTECT();
