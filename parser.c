@@ -74,7 +74,6 @@ struct Parser {
     FixupStack fixup_loop_break;
     FixupStack fixup_loop_next;
     LS_VECTOR_OF(Ht *) locals;
-    size_t func_level;
     jmp_buf err_handler;
     ParserError err;
 };
@@ -109,8 +108,6 @@ parser_reset(Parser *p)
         ht_destroy(p->locals.data[i]);
     }
     LS_VECTOR_CLEAR(p->locals);
-
-    p->func_level = 0;
 }
 
 typedef enum {
@@ -175,22 +172,21 @@ static
 Instr
 assignment(Parser *p, const char *name, size_t nname, bool local)
 {
-    if (p->locals.size) {
-        Ht *h = p->locals.data[p->locals.size - 1];
-        if (local) {
-            const size_t index = ht_put(h, name, nname, ht_size(h));
+    assert(p->locals.size);
+    Ht *h = p->locals.data[p->locals.size - 1];
+    if (local) {
+        const unsigned index = ht_put(h, name, nname, ht_size(h));
+        return (Instr) {
+            .cmd = CMD_STORE_FAST,
+            .args = {.index = index},
+        };
+    } else {
+        const HtValue val = ht_get(h, name, nname);
+        if (val != HT_NO_VALUE) {
             return (Instr) {
                 .cmd = CMD_STORE_FAST,
-                .args = {.index = index},
+                .args = {.index = val},
             };
-        } else {
-            const HtValue val = ht_get(h, name, nname);
-            if (val != HT_NO_VALUE) {
-                return (Instr) {
-                    .cmd = CMD_STORE_FAST,
-                    .args = {.index = val},
-                };
-            }
         }
     }
     return (Instr) {
@@ -250,10 +246,37 @@ row(Parser *p, unsigned *width)
 
 static
 size_t
-paramlist(Parser *p, LexemKind terminator)
+func_begin(Parser *p)
 {
+    Ht *h = ht_new(2);
+    LS_VECTOR_PUSH(p->locals, h);
+
     const size_t fu_instr = p->chunk.size;
     INSTR_N(p, CMD_FUNCTION);
+    return fu_instr;
+}
+
+static
+void
+func_end(Parser *p, size_t fu_instr)
+{
+    Ht *h = p->locals.data[p->locals.size - 1];
+    const size_t nlocalstbl = ht_size(h);
+    ht_destroy(h);
+    --p->locals.size;
+
+    INSTR_N(p, CMD_EXIT);
+
+    Instr *fu = &p->chunk.data[fu_instr];
+    fu->args.func.offset = p->chunk.size - fu_instr;
+    fu->args.func.nlocals = nlocalstbl - fu->args.func.nargs;
+}
+
+static
+size_t
+paramlist(Parser *p, LexemKind terminator)
+{
+    const size_t fu_instr = func_begin(p);
 
     Ht *h = p->locals.data[p->locals.size - 1];
 
@@ -745,7 +768,7 @@ stmt(Parser *p)
 
     case LEX_KIND_RETURN:
         {
-            if (!p->func_level) {
+            if (p->locals.size == 1) {
                 throw_at(p, m, "'return' outside of a function");
             }
             StopTokenKind s = expr(p, -1);
@@ -773,10 +796,6 @@ stmt(Parser *p)
                 throw_at(p, lbrace, "expected '('");
             }
 
-            Ht *h = ht_new(2);
-            LS_VECTOR_PUSH(p->locals, h);
-            ++p->func_level;
-
             const size_t fu_instr = paramlist(p, LEX_KIND_RBRACE);
 
             StopTokenKind s;
@@ -785,20 +804,9 @@ stmt(Parser *p)
                 throw_there(p, "expected 'end'");
             }
 
-            bind_vars(p, fu_instr);
-            const size_t nlocalstbl = ht_size(h);
-            --p->func_level;
-            ht_destroy(h);
-            --p->locals.size;
-
-            INSTR_N(p, CMD_EXIT);
-
-            Instr *fu = &p->chunk.data[fu_instr];
-            fu->args.func.offset = p->chunk.size - fu_instr;
-            fu->args.func.nlocals = nlocalstbl - fu->args.func.nargs;
-
+            bind_vars(p, fu_instr); //FIXME!!!
+            func_end(p, fu_instr);
             LS_VECTOR_PUSH(p->chunk, assignment(p, funame.start, funame.size, true));
-
             return end_of_stmt(p);
         }
         break;
@@ -859,12 +867,21 @@ parser_parse(Parser *p)
         return false;
     }
 
+    const size_t fu_instr = func_begin(p);
+
     StopTokenKind s2;
     while ((s2 = stmt(p)) == STOP_TOK_SEMICOLON) {}
     if (s2 != STOP_TOK_EOF) {
         throw_there(p, "syntax error");
     }
+
+    bind_vars(p, fu_instr); //FIXME!!!
+    func_end(p, fu_instr);
+
+    INSTR_N(p, CMD_CALL);
+    INSTR_N(p, CMD_PRINT);
     INSTR_N(p, CMD_EXIT);
+
     return true;
 }
 
