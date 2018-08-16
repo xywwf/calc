@@ -7,8 +7,10 @@ Values
     12
     ≈≈> 3.1415
     3.1415
-    ≈≈> "By notation, x•x•x = x³."
-    By notation, x•x•x = x³.
+    ≈≈> "Hello, world"
+    Hello, world
+    ≈≈> "こんにちは世界"
+    こんにちは世界
 
 Operators
 ---
@@ -195,13 +197,6 @@ Functions & local variables
     # 3.3
     # 102
     # -9
-
-Lambdas
----
-
-    ≈≈> d = lambda x, y | sin(x*y)
-    ≈≈> d(0.5, Pi)
-    1
 
 Built-in functions
 ---
