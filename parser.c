@@ -74,6 +74,7 @@ struct Parser {
     FixupStack fixup_loop_break;
     FixupStack fixup_loop_next;
     LS_VECTOR_OF(Ht *) locals;
+    size_t func_start;
     jmp_buf err_handler;
     ParserError err;
 };
@@ -108,6 +109,8 @@ parser_reset(Parser *p)
         ht_destroy(p->locals.data[i]);
     }
     LS_VECTOR_CLEAR(p->locals);
+
+    p->func_start = 0;
 }
 
 typedef enum {
@@ -248,11 +251,16 @@ static
 size_t
 func_begin(Parser *p)
 {
+    if (p->func_start) {
+        bind_vars(p, p->func_start);
+    }
+
     Ht *h = ht_new(2);
     LS_VECTOR_PUSH(p->locals, h);
 
     const size_t fu_instr = p->chunk.size;
     INSTR_N(p, CMD_FUNCTION);
+    p->func_start = fu_instr;
     return fu_instr;
 }
 
@@ -260,6 +268,8 @@ static
 void
 func_end(Parser *p, size_t fu_instr)
 {
+    bind_vars(p, p->func_start);
+
     Ht *h = p->locals.data[p->locals.size - 1];
     const size_t nlocalstbl = ht_size(h);
     ht_destroy(h);
@@ -270,6 +280,8 @@ func_end(Parser *p, size_t fu_instr)
     Instr *fu = &p->chunk.data[fu_instr];
     fu->args.func.offset = p->chunk.size - fu_instr;
     fu->args.func.nlocals = nlocalstbl - fu->args.func.nargs;
+
+    p->func_start = p->chunk.size;
 }
 
 static
@@ -768,9 +780,6 @@ stmt(Parser *p)
 
     case LEX_KIND_RETURN:
         {
-            if (p->locals.size == 1) {
-                throw_at(p, m, "'return' outside of a function");
-            }
             StopTokenKind s = expr(p, -1);
             INSTR_N(p, CMD_RETURN);
             switch (s) {
@@ -804,9 +813,8 @@ stmt(Parser *p)
                 throw_there(p, "expected 'end'");
             }
 
-            bind_vars(p, fu_instr); //FIXME!!!
             func_end(p, fu_instr);
-            LS_VECTOR_PUSH(p->chunk, assignment(p, funame.start, funame.size, true));
+            LS_VECTOR_PUSH(p->chunk, assignment(p, funame.start, funame.size, false));
             return end_of_stmt(p);
         }
         break;
@@ -875,7 +883,6 @@ parser_parse(Parser *p)
         throw_there(p, "syntax error");
     }
 
-    bind_vars(p, fu_instr); //FIXME!!!
     func_end(p, fu_instr);
 
     INSTR_N(p, CMD_CALL);
