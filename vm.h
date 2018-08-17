@@ -10,15 +10,12 @@ typedef enum {
     CMD_PRINT,
     CMD_LOAD_SCALAR,
     CMD_LOAD_STR,
-
     CMD_LOAD_FAST,
     CMD_LOAD,
     CMD_LOAD_AT,
-
     CMD_STORE_FAST,
     CMD_STORE,
     CMD_STORE_AT,
-
     CMD_OP_UNARY,
     CMD_OP_BINARY,
     CMD_CALL,
@@ -28,6 +25,7 @@ typedef enum {
     CMD_FUNCTION,
     CMD_RETURN,
     CMD_EXIT,
+    CMD_QUARK,
 } Command;
 
 typedef struct {
@@ -72,6 +70,9 @@ typedef struct {
             unsigned nlocals;
             int offset;
         } func;
+
+        // CMD_QUARK
+        unsigned nline;
     } args;
 } Instr;
 

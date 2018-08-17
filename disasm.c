@@ -6,6 +6,9 @@ void
 disasm_print(const Instr *chunk, size_t nchunk)
 {
 #define CMDFMT "%-16s"
+#define JMPFMT "%+d \t(-> %zu)"
+#define JMPARG(D_) D_, i + (D_)
+
     for (size_t i = 0; i < nchunk; ++i) {
         Instr in = chunk[i];
         printf("%8zu | ", i);
@@ -50,20 +53,23 @@ disasm_print(const Instr *chunk, size_t nchunk)
             printf(CMDFMT "%u, %u\n", "matrix", in.args.dims.height, in.args.dims.width);
             break;
         case CMD_JUMP:
-            printf(CMDFMT "%+d\n", "jump", in.args.offset);
+            printf(CMDFMT JMPFMT "\n", "jump", JMPARG(in.args.offset));
             break;
         case CMD_JUMP_UNLESS:
-            printf(CMDFMT "%+d\n", "jump_unless", in.args.offset);
+            printf(CMDFMT JMPFMT "\n", "jump_unless", JMPARG(in.args.offset));
             break;
         case CMD_FUNCTION:
-            printf(CMDFMT "nargs=%u, nlocals=%u, %+d\n", "function",
-                   in.args.func.nargs, in.args.func.nlocals, in.args.func.offset);
+            printf(CMDFMT "nargs=%u, nlocals=%u, " JMPFMT "\n", "function",
+                   in.args.func.nargs, in.args.func.nlocals, JMPARG(in.args.func.offset));
             break;
         case CMD_RETURN:
             printf(CMDFMT "\n", "return");
             break;
         case CMD_EXIT:
             printf(CMDFMT "\n", "exit");
+            break;
+        case CMD_QUARK:
+            printf(CMDFMT "%u\n", "quark", in.args.nline);
             break;
         }
     }

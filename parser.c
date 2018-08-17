@@ -74,7 +74,8 @@ struct Parser {
     FixupStack fixup_loop_break;
     FixupStack fixup_loop_next;
     LS_VECTOR_OF(Ht *) locals;
-    size_t func_start;
+    size_t bind_vars_from;
+    unsigned line;
     jmp_buf err_handler;
     ParserError err;
 };
@@ -110,7 +111,8 @@ parser_reset(Parser *p)
     }
     LS_VECTOR_CLEAR(p->locals);
 
-    p->func_start = 0;
+    p->bind_vars_from = 0;
+    p->line = 0;
 }
 
 typedef enum {
@@ -151,7 +153,21 @@ throw_there(Parser *p, const char *msg)
     throw_at(p, lexer_next(p->lex), msg);
 }
 
-#define INSTR(P_, Cmd_, ...) \
+static inline
+void
+emit(Parser *p, Lexem pos, Instr in)
+{
+    if (pos.line != p->line) {
+        LS_VECTOR_PUSH(p->chunk, ((Instr) {.cmd = CMD_QUARK, .args = {.nline = pos.line}}));
+        p->line = pos.line;
+    }
+    LS_VECTOR_PUSH(p->chunk, in);
+}
+
+#define INSTR(P_, M_, Cmd_, ...) \
+    emit(P_, M_, (Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}})
+
+#define INSTR_1(P_, Cmd_, ...) \
     LS_VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}}))
 
 #define INSTR_N(P_, Cmd_) \
@@ -203,11 +219,16 @@ assignment(Parser *p, const char *name, size_t nname, bool local)
 
 static
 void
-bind_vars(Parser *p, size_t from)
+bind_vars(Parser *p)
 {
+    const size_t nchunk = p->chunk.size;
+    if (!nchunk) {
+        return;
+    }
     assert(p->locals.size);
     Ht *h = p->locals.data[p->locals.size - 1];
-    for (size_t i = from; i < p->chunk.size; ++i) {
+
+    for (size_t i = p->bind_vars_from; i < nchunk; ++i) {
         const Instr in = p->chunk.data[i];
         if (in.cmd != CMD_LOAD) {
             continue;
@@ -220,6 +241,8 @@ bind_vars(Parser *p, size_t from)
             };
         }
     }
+
+    p->bind_vars_from = nchunk;
 }
 
 // forward declaration
@@ -251,37 +274,32 @@ static
 size_t
 func_begin(Parser *p)
 {
-    if (p->func_start) {
-        bind_vars(p, p->func_start);
+    if (p->chunk.size) {
+        bind_vars(p);
     }
 
     Ht *h = ht_new(2);
     LS_VECTOR_PUSH(p->locals, h);
 
-    const size_t fu_instr = p->chunk.size;
     INSTR_N(p, CMD_FUNCTION);
-    p->func_start = fu_instr;
-    return fu_instr;
+    return p->chunk.size - 1;
 }
 
 static
 void
 func_end(Parser *p, size_t fu_instr)
 {
-    bind_vars(p, p->func_start);
+    bind_vars(p);
 
-    Ht *h = p->locals.data[p->locals.size - 1];
+    Ht *h = p->locals.data[--p->locals.size];
     const size_t nlocalstbl = ht_size(h);
     ht_destroy(h);
-    --p->locals.size;
 
     INSTR_N(p, CMD_EXIT);
 
     Instr *fu = &p->chunk.data[fu_instr];
     fu->args.func.offset = p->chunk.size - fu_instr;
     fu->args.func.nlocals = nlocalstbl - fu->args.func.nargs;
-
-    p->func_start = p->chunk.size;
 }
 
 static
@@ -338,7 +356,7 @@ expr(Parser *p, int min_priority)
                 if (!scalar_parse(m.start, m.size, &scalar)) {
                     throw_at(p, m, "invalid number");
                 }
-                INSTR(p, CMD_LOAD_SCALAR, .scalar = scalar);
+                INSTR(p, m, CMD_LOAD_SCALAR, .scalar = scalar);
                 p->expr_end = true;
             }
             break;
@@ -346,7 +364,7 @@ expr(Parser *p, int min_priority)
         case LEX_KIND_STR:
             {
                 THIS_IS_EXPR(p, m);
-                INSTR(p, CMD_LOAD_STR, .str = {.start = m.start, .size = m.size});
+                INSTR(p, m, CMD_LOAD_STR, .str = {.start = m.start, .size = m.size});
                 p->expr_end = true;
             }
             break;
@@ -354,7 +372,7 @@ expr(Parser *p, int min_priority)
         case LEX_KIND_IDENT:
             {
                 THIS_IS_EXPR(p, m);
-                INSTR(p, CMD_LOAD, .str = {.start = m.start, .size = m.size});
+                INSTR(p, m, CMD_LOAD, .str = {.start = m.start, .size = m.size});
                 p->expr_end = true;
             }
             break;
@@ -380,11 +398,11 @@ expr(Parser *p, int min_priority)
                 if (op->arity == 1) {
                     if (op->assoc == OP_ASSOC_LEFT) {
                         AFTER_EXPR(p, m);
-                        INSTR(p, CMD_OP_UNARY, .unary = op->exec.unary);
+                        INSTR(p, m, CMD_OP_UNARY, .unary = op->exec.unary);
                     } else {
                         THIS_IS_EXPR(p, m);
                         StopTokenKind s = expr(p, op->priority);
-                        INSTR(p, CMD_OP_UNARY, .unary = op->exec.unary);
+                        INSTR(p, m, CMD_OP_UNARY, .unary = op->exec.unary);
                         if (s != STOP_TOK_OP) {
                             return s;
                         }
@@ -393,7 +411,7 @@ expr(Parser *p, int min_priority)
                     AFTER_EXPR(p, m);
                     p->expr_end = false;
                     StopTokenKind s = expr(p, op->priority + (op->assoc == OP_ASSOC_LEFT));
-                    INSTR(p, CMD_OP_BINARY, .binary = op->exec.binary);
+                    INSTR(p, m, CMD_OP_BINARY, .binary = op->exec.binary);
                     if (s != STOP_TOK_OP) {
                         return s;
                     }
@@ -423,7 +441,7 @@ expr(Parser *p, int min_priority)
                         }
                     }
                 }
-                INSTR(p, CMD_CALL, .nargs = nargs);
+                INSTR(p, m, CMD_CALL, .nargs = nargs);
             } else {
                 // grouping
                 if (expr(p, -1) != STOP_TOK_RBRACE) {
@@ -447,7 +465,7 @@ expr(Parser *p, int min_priority)
                         throw_there(p, "expected either ',' or ']'");
                     }
                 }
-                INSTR(p, CMD_LOAD_AT, .nindices = nindices);
+                INSTR(p, m, CMD_LOAD_AT, .nindices = nindices);
             } else {
                 // matrix
                 unsigned width;
@@ -469,7 +487,7 @@ expr(Parser *p, int min_priority)
                         }
                     }
                 }
-                INSTR(p, CMD_MATRIX, .dims = {.height = height, .width = width});
+                INSTR(p, m, CMD_MATRIX, .dims = {.height = height, .width = width});
             }
             break;
 
@@ -689,7 +707,7 @@ stmt(Parser *p)
                 throw_there(p, "expected 'end'");
             }
 
-            INSTR(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
+            INSTR_1(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
 
             const size_t end_pos = p->chunk.size;
             p->chunk.data[jump_instr].args.offset = end_pos - jump_instr;
@@ -734,6 +752,7 @@ stmt(Parser *p)
             INSTR_N(p, CMD_JUMP_UNLESS);
 
             // assignment
+            p->line = 0;
             const size_t old_aux_size = p->aux_chunk.size;
             swap_chunks(p);
             if (expr(p, -1) != STOP_TOK_DO) {
@@ -756,7 +775,7 @@ stmt(Parser *p)
             }
             p->aux_chunk.size = old_aux_size;
 
-            INSTR(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
+            INSTR_1(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
 
             const size_t end_pos = p->chunk.size;
             p->chunk.data[jump_instr].args.offset = end_pos - jump_instr;

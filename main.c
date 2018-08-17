@@ -18,6 +18,7 @@
 #include "func.h"
 #include "str.h"
 #include "disasm.h"
+#include "osdep.h"
 
 static inline
 bool
@@ -37,7 +38,7 @@ X_uminus(Env *e, Value a)
         {
             Matrix *x = AS_MAT(a);
             Matrix *y = matrix_new(x->height, x->width);
-            const size_t n = (size_t) x->height * x->width;
+            const size_t n = x->height * x->width;
             for (size_t i = 0; i < n; ++i) {
                 y->elems[i] = -x->elems[i];
             }
@@ -59,7 +60,7 @@ X_bminus(Env *e, Value minuend, Value subtrahend)
             env_throw(e, "matrices unconformable for subtraction");
         }
         Matrix *z = matrix_new(x->height, x->width);
-        const size_t n = (size_t) x->height * x->width;
+        const size_t n = x->height * x->width;
         for (size_t i = 0; i < n; ++i) {
             z->elems[i] = x->elems[i] - y->elems[i];
         }
@@ -83,7 +84,7 @@ X_plus(Env *e, Value a, Value b)
             env_throw(e, "matrices unconformable for addition");
         }
         Matrix *z = matrix_new(x->height, x->width);
-        const size_t n = (size_t) x->height * x->width;
+        const size_t n = x->height * x->width;
         for (size_t i = 0; i < n; ++i) {
             z->elems[i] = x->elems[i] + y->elems[i];
         }
@@ -102,7 +103,7 @@ sbym(Value s, Value m)
     Matrix *x = AS_MAT(m);
     const Scalar a = s.as.scalar;
     Matrix *y = matrix_new(x->height, x->width);
-    const size_t n = (size_t) x->height * x->width;
+    const size_t n = x->height * x->width;
     for (size_t i = 0; i < n; ++i) {
         y->elems[i] = a * x->elems[i];
     }
@@ -201,7 +202,7 @@ X_eq(Env *e, Value a, Value b)
             if (!eqdim(x, y)) {
                 return MK_SCL(0);
             }
-            const size_t nelems = (size_t) x->height * x->width;
+            const size_t nelems = x->height * x->width;
             for (size_t i = 0; i < nelems; ++i) {
                 if (x->elems[i] != y->elems[i]) {
                     return MK_SCL(0);
@@ -240,7 +241,7 @@ X_ne(Env *e, Value a, Value b)
             if (!eqdim(x, y)) {
                 return MK_SCL(1);
             }
-            const size_t nelems = (size_t) x->height * x->width;
+            const size_t nelems = x->height * x->width;
             for (size_t i = 0; i < nelems; ++i) {
                 if (x->elems[i] != y->elems[i]) {
                     return MK_SCL(1);
@@ -382,18 +383,9 @@ static
 Value
 X_Rand(Env *e, const Value *args, unsigned nargs)
 {
-    // Not thread-safe. Nobody cares.
     enum { NBUF = 1 << 12 };
     static unsigned buf[NBUF];
     static unsigned *cur = buf + NBUF;
-    static int fd = -1;
-    if (fd == -1) {
-        fd = open("/dev/urandom", O_RDONLY);
-        if (fd < 0) {
-            perror("open: /dev/urandom");
-            abort();
-        }
-    }
 
     (void) e;
     (void) args;
@@ -402,8 +394,8 @@ X_Rand(Env *e, const Value *args, unsigned nargs)
     }
 
     if (cur == buf + NBUF) {
-        if (read(fd, buf, sizeof(buf)) != sizeof(buf)) {
-            env_throw(e, "cannot read from /dev/urandom");
+        if (!osdep_fill_random(buf, sizeof(buf))) {
+            env_throw(e, "cannot generate random number");
         }
         cur = buf;
     }
@@ -555,7 +547,7 @@ static
 bool
 dostring(Runtime rt, const char *name, const char *buf, size_t nbuf)
 {
-    ExecError err = runtime_exec(rt, buf, nbuf);
+    ExecError err = runtime_exec(rt, name, buf, nbuf);
     switch (err.kind) {
     case ERR_KIND_OK:
         return true;
@@ -634,7 +626,7 @@ repl(Runtime rt)
         add_history(expr);
         const size_t nexpr = strlen(expr);
 
-        ExecError err = runtime_exec(rt, expr, nexpr);
+        ExecError err = runtime_exec(rt, "(REPL)", expr, nexpr);
         switch (err.kind) {
         case ERR_KIND_OK:
             break;

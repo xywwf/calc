@@ -20,6 +20,13 @@ struct Ht {
     LSString keys;
 };
 
+static inline
+size_t
+zu_scalbn(size_t a, unsigned char b)
+{
+    return a << b;
+}
+
 static
 UIndex
 get_hash(const char *key, size_t nkey)
@@ -38,11 +45,11 @@ ht_new(unsigned char rank)
     Ht *h = LS_XNEW(Ht, 1);
     *h = (Ht) {
         .rank = rank,
-        .buckets = LS_XNEW(UIndex, ((UIndex) 1) << rank),
+        .buckets = LS_XNEW(UIndex, zu_scalbn(1, rank)),
         .entries = LS_VECTOR_NEW(),
         .keys = LS_VECTOR_NEW(),
     };
-    memset(h->buckets, (unsigned char) -1, sizeof(UIndex) << rank);
+    memset(h->buckets, (unsigned char) -1, zu_scalbn(sizeof(UIndex), rank));
     return h;
 }
 
@@ -51,16 +58,16 @@ void
 grow_if_needed(Ht *h)
 {
     const size_t nentries = h->entries.size;
-    const size_t old_nbuckets = ((size_t) 1) << h->rank;
+    const size_t old_nbuckets = zu_scalbn(1, h->rank);
     if (nentries * 3 < old_nbuckets * 2) {
         return;
     }
 
     const unsigned char rank = ++h->rank;
-    const UIndex nbuckets = ((UIndex) 1) << rank;
+    const UIndex nbuckets = zu_scalbn(1, rank);
     const UIndex mask = nbuckets - 1;
     UIndex *buckets = h->buckets = ls_xrealloc(h->buckets, nbuckets, sizeof(UIndex));
-    memset(buckets, (unsigned char) -1, sizeof(UIndex) << rank);
+    memset(buckets, (unsigned char) -1, zu_scalbn(sizeof(UIndex), rank));
 
     Entry *entries = h->entries.data;
     char *keys = h->keys.data;
@@ -99,7 +106,7 @@ ht_put(Ht *h, const char *key, size_t nkey, HtValue value)
     UIndex *buckets = h->buckets;
     char *keys = h->keys.data;
 
-    const UIndex nbuckets = ((UIndex) 1) << h->rank;
+    const UIndex nbuckets = zu_scalbn(1, h->rank);
     const UIndex mask = nbuckets - 1;
     const UIndex base = get_hash(key, nkey) & mask;
 
@@ -125,7 +132,7 @@ ht_get(Ht *h, const char *key, size_t nkey)
     UIndex *buckets = h->buckets;
     char *keys = h->keys.data;
 
-    const UIndex nbuckets = ((UIndex) 1) << h->rank;
+    const UIndex nbuckets = zu_scalbn(1, h->rank);
     const UIndex mask = nbuckets - 1;
     const UIndex base = get_hash(key, nkey) & mask;
 

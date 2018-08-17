@@ -39,6 +39,7 @@ typedef enum {
 
 typedef struct {
     LexemKind kind;
+    unsigned line;
     void *data;
     const char *start;
     size_t size;

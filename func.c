@@ -3,7 +3,7 @@
 #include <string.h>
 
 Func *
-func_new(unsigned nargs, unsigned nlocals, const Instr *chunk, size_t nchunk)
+func_new(unsigned nargs, unsigned nlocals, const char *src, const Instr *chunk, size_t nchunk)
 {
     Func *f = ls_xmalloc(sizeof(Func) + nchunk * sizeof(Instr), 1);
     f->gchdr.nrefs = 1;
@@ -12,7 +12,8 @@ func_new(unsigned nargs, unsigned nlocals, const Instr *chunk, size_t nchunk)
     f->nchunk = nchunk;
     memcpy(f->chunk, chunk, nchunk * sizeof(Instr));
 
-    LSString strdups = LS_VECTOR_NEW();
+    const size_t nsrc = strlen(src);
+    LSString strdups = ls_string_new_from_b(src, nsrc + 1);
 
 #define XPAND_FOR_STR() \
     for (size_t i = 0; i < nchunk; ++i) { \
@@ -27,13 +28,14 @@ func_new(unsigned nargs, unsigned nlocals, const Instr *chunk, size_t nchunk)
         } \
     }
 
+    size_t offset = strdups.size;
+
 #define X(S_, NS_) ls_string_append_b(&strdups, S_, NS_)
     XPAND_FOR_STR()
 #undef X
 
     LS_VECTOR_SHRINK(strdups);
 
-    size_t offset = 0;
 #define X(S_, NS_) S_ = strdups.data + offset, offset += NS_
     XPAND_FOR_STR()
 #undef X

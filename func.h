@@ -17,7 +17,7 @@ typedef struct {
 } Func;
 
 Func *
-func_new(unsigned nargs, unsigned nlocals, const Instr *chunk, size_t nchunk);
+func_new(unsigned nargs, unsigned nlocals, const char *src, const Instr *chunk, size_t nchunk);
 
 void
 func_destroy(Func *f);

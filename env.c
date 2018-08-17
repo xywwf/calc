@@ -9,11 +9,14 @@
 #include <stdarg.h>
 #include <assert.h>
 
+#include <stdio.h>
+
 #include "libls/vector.h"
 
 typedef struct {
     const Instr *site;
     size_t stackpos;
+    char *src;
 } Callsite;
 
 struct Env {
@@ -48,20 +51,22 @@ env_put(Env *e, const char *name, size_t nname, Value value)
 }
 
 bool
-env_eval(Env *e, const Instr *const chunk, size_t nchunk)
+env_eval(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
 {
     (void) nchunk;
     volatile bool ok = false;
     LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
     LS_VECTOR_OF(Callsite) callstack = LS_VECTOR_NEW();
 
-    Value    *volatile data1;
-    size_t    volatile size1;
-    Callsite *volatile data2;
-    size_t    volatile size2;
+    Instr const *volatile ip = NULL;
+    Value       *volatile data1;
+    size_t       volatile size1;
+    Callsite    *volatile data2;
+    size_t       volatile size2;
 
 #define FLUSH() \
     do { \
+        ip    = site; \
         data1 = stack.data; \
         size1 = stack.size; \
         data2 = callstack.data; \
@@ -263,12 +268,13 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
                     {
                         Func *f = AS_FUNC(func);
                         if (in.args.nargs != f->nargs) {
-                            ERR("wrong # of arguments");
+                            ERR("wrong number of arguments");
                         }
 
                         LS_VECTOR_PUSH(callstack, ((Callsite) {
                             .site = site + 1,
                             .stackpos = stack.size - f->nargs,
+                            .src = f->strdups,
                         }));
 
                         for (unsigned i = 0; i < f->nlocals; ++i) {
@@ -326,6 +332,7 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
                 Func *f = func_new(
                     in.args.func.nargs,
                     in.args.func.nlocals,
+                    callstack.size ? callstack.data[callstack.size - 1].src : src,
                     site + 1,
                     in.args.func.offset - 1);
                 LS_VECTOR_PUSH(stack, MK_FUNC(f));
@@ -356,6 +363,10 @@ env_eval(Env *e, const Instr *const chunk, size_t nchunk)
                 site = prev.site;
             }
             continue;
+
+        case CMD_QUARK:
+            // do nothing
+            break;
         }
 
         ++site;
@@ -365,6 +376,19 @@ do_not_goto_me:
     if (ok) {
         assert(!size1);
         assert(!size2);
+    } else {
+        do {
+            --ip;
+        } while (ip->cmd != CMD_QUARK);
+        fprintf(stderr, "  Error in %s at line %u\n", data2[size2 - 1].src, ip->args.nline);
+
+        for (size_t i = size2 - 1; i; --i) {
+            const Instr *ptr = data2[i].site;
+            do {
+                --ptr;
+            } while (ptr->cmd != CMD_QUARK);
+            fprintf(stderr, " called by %s at line %u\n", data2[i - 1].src, ptr->args.nline);
+        }
     }
     for (size_t i = 0; i < size1; ++i) {
         value_unref(data1[i]);

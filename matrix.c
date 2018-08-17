@@ -1,10 +1,15 @@
 #include "matrix.h"
 #include "env.h"
 
+#include <limits.h>
+
 Matrix *
 matrix_new(unsigned height, unsigned width)
 {
-    const size_t nelems = height * width;
+    const size_t nelems = (size_t) height * width;
+    if (nelems > UINT_MAX) {
+        LS_PANIC("matrix is too large");
+    }
     Matrix *m = ls_xcalloc(sizeof(Matrix) + nelems * sizeof(Scalar), 1);
     m->gchdr.nrefs = 1;
     m->height = height;
@@ -34,7 +39,7 @@ matrix_get1(Env *e, Matrix *m, Value elem)
         env_throw(e, "cannot index matrix with %s value", value_kindname(elem.kind));
     }
     const size_t num = AS_SCL(elem);
-    if (num < 1 || num > (size_t) m->width * m->height) {
+    if (num < 1 || num > m->width * m->height) {
         env_throw(e, "element number out of range");
     }
 
@@ -68,7 +73,7 @@ matrix_set1(Env *e, Matrix *m, Value elem, Value v)
         env_throw(e, "cannot index matrix with %s value", value_kindname(elem.kind));
     }
     const size_t num = AS_SCL(elem);
-    if (num < 1 || num > (size_t) m->width * m->height) {
+    if (num < 1 || num > m->width * m->height) {
         env_throw(e, "element number out of range");
     }
 

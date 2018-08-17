@@ -5,6 +5,7 @@ struct Lexer {
     const char *last;
     const char *mark;
     Trie *opreg;
+    unsigned line;
 };
 
 static inline
@@ -68,16 +69,26 @@ lexer_reset(Lexer *x, const char *buf, size_t nbuf)
 {
     x->cur = buf;
     x->last = buf + nbuf;
+    x->line = 1;
 }
 
 Lexem
 lexer_next(Lexer *x)
 {
+#define RET(Kind_, Sz_, Data_) \
+    return (Lexem) { \
+        .kind = Kind_, \
+        .line = x->line, \
+        .data = Data_, \
+        .start = x->cur, \
+        .size = Sz_, \
+    }
+
     while (1) {
         // skip whitespace
         while (1) {
             if (x->cur == x->last) {
-                return (Lexem) {.kind = LEX_KIND_EOF, .start = x->cur, .size = 0};
+                RET(LEX_KIND_EOF, 0, NULL);
             }
             if (!is_whitespace(*x->cur)) {
                 break;
@@ -87,32 +98,24 @@ lexer_next(Lexer *x)
         if (*x->cur == '\\') { // an escape?
             ++x->cur;
             if (x->cur == x->last) {
-                return (Lexem) {
-                    .kind = LEX_KIND_ERROR,
-                    .data = "escape symbol at the end of input",
-                    .start = x->cur - 1,
-                    .size = 1,
-                };
+                RET(LEX_KIND_ERROR, 1, "escape symbol at the end of input");
             }
             if (*x->cur != '\n') {
-                return (Lexem) {
-                    .kind = LEX_KIND_ERROR,
-                    .data = "invalid escape (expected newline)",
-                    .start = x->cur,
-                    .size = 1,
-                };
+                RET(LEX_KIND_ERROR, 1, "invalid escape (expected newline)");
             }
+            ++x->line;
             ++x->cur;
         } else if (*x->cur == '#') { // a comment?
-            ++x->cur;
-            while (x->cur != x->last && *x->cur++ != '\n') {}
+            do {
+                ++x->cur;
+            } while (x->cur != x->last && *x->cur != '\n');
         } else {
             break;
         }
     }
 
     // parse next token
-    Lexem r = {.start = x->cur};
+    Lexem r = {.line = x->line, .start = x->cur};
     char c = *x->cur;
 
     if (c == '(') {
@@ -127,8 +130,13 @@ lexer_next(Lexer *x)
         r.kind = LEX_KIND_COMMA;
         ++x->cur;
 
-    } else if (c == ';' || c == '\n') {
+    } else if (c == ';') {
         r.kind = LEX_KIND_SEMICOLON;
+        ++x->cur;
+
+    } else if (c == '\n') {
+        r.kind = LEX_KIND_SEMICOLON;
+        ++x->line;
         ++x->cur;
 
     } else if (c == '[') {
@@ -144,12 +152,7 @@ lexer_next(Lexer *x)
         do {
             ++x->cur;
             if (x->cur == x->last || *x->cur == '\n') {
-                return (Lexem) {
-                    .kind = LEX_KIND_ERROR,
-                    .data = "unterminated string",
-                    .start = x->cur,
-                    .size = 0,
-                };
+                RET(LEX_KIND_ERROR, 0, "unterminated string");
             }
         } while (*x->cur != '"');
         ++x->cur;

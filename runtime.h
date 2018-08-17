@@ -45,7 +45,7 @@ void
 runtime_put(Runtime r, const char *name, Value value);
 
 ExecError
-runtime_exec(Runtime r, const char *buf, size_t nbuf);
+runtime_exec(Runtime r, const char *name, const char *buf, size_t nbuf);
 
 void
 runtime_destroy(Runtime r);

@@ -70,7 +70,7 @@ value_is_truthy(Value v)
     case VAL_KIND_MATRIX:
         {
             Matrix *m = AS_MAT(v);
-            const size_t nelems = (size_t) m->height * m->width;
+            const size_t nelems = m->height * m->width;
             for (size_t i = 0; i < nelems; ++i) {
                 if (m->elems[i]) {
                     return true;
