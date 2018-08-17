@@ -24,17 +24,23 @@ struct Env {
     Ht *gt;
     jmp_buf err_handler;
     char err[1024];
+    void *userdata;
 };
 
 Env *
-env_new(void)
+env_new(void *userdata)
 {
     Env *e = LS_XNEW(Env, 1);
-    *e = (Env) {
-        .gs = LS_VECTOR_NEW(),
-        .gt = ht_new(6),
-    };
+    LS_VECTOR_INIT(e->gs);
+    e->gt = ht_new(6);
+    e->userdata = userdata;
     return e;
+}
+
+void *
+env_userdata(Env *e)
+{
+    return e->userdata;
 }
 
 void
@@ -293,7 +299,7 @@ env_eval(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
 
         case CMD_MATRIX:
             {
-                const size_t nelems = (size_t) in.args.dims.height * in.args.dims.width;
+                const size_t nelems = xmul_mat_dims(in.args.dims.height, in.args.dims.width);
 
                 // <danger>
                 PROTECT();

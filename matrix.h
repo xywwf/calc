@@ -4,6 +4,20 @@
 #include "common.h"
 #include "value.h"
 
+#include <stdint.h>
+#include <limits.h>
+
+LS_INHEADER
+size_t
+xmul_mat_dims(unsigned height, unsigned width)
+{
+    const uint_least64_t res = (uint_least64_t) height * width;
+    if (res > UINT_MAX) {
+        LS_PANIC("matrix is too large (would run out of memory)");
+    }
+    return res;
+}
+
 struct Env;
 
 typedef struct {

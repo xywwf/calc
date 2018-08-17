@@ -2,36 +2,51 @@
 
 #ifdef __MINGW32__
 #   include <windows.h>
-#   include <errno.h>
 
-int
-osdep_fill_random(void *buf, size_t nbuf)
+void *
+osdep_rng_new(void)
 {
-    if (BCryptGenRandom(NULL, (PUCHAR) buf, nbuf, BCRYPT_USE_SYSTEM_PREFERRED_RNG)
-            != STATUS_SUCCESS)
-    {
-        errno = EINVAL;
-        return -1;
-    }
-    return 0;
+    return ""; // definitely not NULL
 }
+
+bool
+osdep_rng_fill(void *handle, void *buf, size_t nbuf)
+{
+    (void) handle;
+    return BCryptGenRandom(NULL, (PUCHAR) buf, nbuf, BCRYPT_USE_SYSTEM_PREFERRED_RNG)
+            == STATUS_SUCCESS;
+}
+
+void
+osdep_rng_destroy(void *handle)
+{
+    (void) handle;
+}
+
 #else
 #   include <unistd.h>
 #   include <fcntl.h>
-int
-osdep_fill_random(void *buf, size_t nbuf)
+
+void *
+osdep_rng_new(void)
 {
-    // Not thread-safe. Nobody cares.
-    static int fd = -1;
-    if (fd == -1) {
-        fd = open("/dev/urandom", O_RDONLY);
-        if (fd < 0) {
-            return -1;
-        }
+    int *r = LS_XNEW(int, 1);
+    if ((*r = open("/dev/urandom", O_RDONLY)) < 0) {
+        free(r);
+        return NULL;
     }
-    if (read(fd, buf, nbuf) != (ssize_t) nbuf) {
-        return -1;
-    }
-    return 0;
+    return r;
+}
+
+bool
+osdep_rng_fill(void *handle, void *buf, size_t nbuf)
+{
+    return read(*(int *) handle, buf, nbuf) == (ssize_t) nbuf;
+}
+
+void
+osdep_rng_destroy(void *handle)
+{
+    free(handle);
 }
 #endif

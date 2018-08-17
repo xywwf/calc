@@ -20,6 +20,19 @@
 #include "disasm.h"
 #include "osdep.h"
 
+typedef struct {
+    void *rng_handle;
+} UserData;
+
+static inline
+UserData *
+userdata_new(void)
+{
+    UserData *ud = LS_XNEW(UserData, 1);
+    *ud = (UserData) {0};
+    return ud;
+}
+
 static inline
 bool
 eqdim(Matrix *x, Matrix *y)
@@ -387,6 +400,13 @@ X_Rand(Env *e, const Value *args, unsigned nargs)
     static unsigned buf[NBUF];
     static unsigned *cur = buf + NBUF;
 
+    UserData *ud = env_userdata(e);
+    if (!ud->rng_handle) {
+        if (!(ud->rng_handle = osdep_rng_new())) {
+            env_throw(e, "cannot create random number generator");
+        }
+    }
+
     (void) e;
     (void) args;
     if (nargs != 0) {
@@ -394,7 +414,7 @@ X_Rand(Env *e, const Value *args, unsigned nargs)
     }
 
     if (cur == buf + NBUF) {
-        if (!osdep_fill_random(buf, sizeof(buf))) {
+        if (!osdep_rng_fill(ud->rng_handle, buf, sizeof(buf))) {
             env_throw(e, "cannot generate random number");
         }
         cur = buf;
@@ -490,7 +510,7 @@ X_Input(Env *e, const Value *args, unsigned nargs)
 {
     (void) args;
     if (nargs) {
-        env_throw(e, "'Input()' takes no arguments");
+        env_throw(e, "'Input' takes no arguments");
     }
 
     char *buf;
@@ -694,7 +714,7 @@ main(int argc, char **argv)
 
     is_interactive = detect_tty();
 
-    Runtime rt = runtime_new();
+    Runtime rt = runtime_new(userdata_new());
     rt.dflag = dflag;
 
 #define UNARY(Exec_, ...) (Op) {.arity = 1, .exec = {.unary = Exec_}, __VA_ARGS__}

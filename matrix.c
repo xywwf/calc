@@ -6,10 +6,7 @@
 Matrix *
 matrix_new(unsigned height, unsigned width)
 {
-    const size_t nelems = (size_t) height * width;
-    if (nelems > UINT_MAX) {
-        LS_PANIC("matrix is too large");
-    }
+    const size_t nelems = xmul_mat_dims(height, width);
     Matrix *m = ls_xcalloc(sizeof(Matrix) + nelems * sizeof(Scalar), 1);
     m->gchdr.nrefs = 1;
     m->height = height;

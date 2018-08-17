@@ -4,6 +4,8 @@
 #include "common.h"
 #include "value.h"
 
+#define VM_NARGS_BITS 5
+
 struct Env;
 
 typedef enum {
@@ -66,9 +68,9 @@ typedef struct {
 
         // CMD_FUNCTION
         struct {
-            unsigned nargs;
-            unsigned nlocals;
             int offset;
+            unsigned nargs   : VM_NARGS_BITS;
+            unsigned nlocals : (32 - VM_NARGS_BITS);
         } func;
 
         // CMD_QUARK

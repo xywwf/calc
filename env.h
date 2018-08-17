@@ -9,7 +9,10 @@
 typedef struct Env Env;
 
 Env *
-env_new(void);
+env_new(void *userdata);
+
+void *
+env_userdata(Env *e);
 
 void
 env_put(Env *e, const char *name, size_t nname, Value value);

@@ -7,6 +7,13 @@
 #include "vm.h"
 
 typedef struct {
+    const Instr *chunk;
+    size_t nchunk;
+    size_t *ends;
+    size_t nends;
+} Program;
+
+typedef struct {
     bool has_pos;
     Lexem pos;
     const char *msg;

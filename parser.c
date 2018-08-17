@@ -170,7 +170,7 @@ emit(Parser *p, Lexem pos, Instr in)
 #define INSTR_1(P_, Cmd_, ...) \
     LS_VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}}))
 
-#define INSTR_N(P_, Cmd_) \
+#define INSTR_1N(P_, Cmd_) \
     LS_VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_}))
 
 #define AFTER_EXPR(P_, M_) \
@@ -281,7 +281,7 @@ func_begin(Parser *p)
     Ht *h = ht_new(2);
     LS_VECTOR_PUSH(p->locals, h);
 
-    INSTR_N(p, CMD_FUNCTION);
+    INSTR_1N(p, CMD_FUNCTION);
     return p->chunk.size - 1;
 }
 
@@ -295,7 +295,7 @@ func_end(Parser *p, size_t fu_instr)
     const size_t nlocalstbl = ht_size(h);
     ht_destroy(h);
 
-    INSTR_N(p, CMD_EXIT);
+    INSTR_1N(p, CMD_EXIT);
 
     Instr *fu = &p->chunk.data[fu_instr];
     fu->args.func.offset = p->chunk.size - fu_instr;
@@ -319,8 +319,11 @@ paramlist(Parser *p, LexemKind terminator)
                 throw_at(p, m, "expected ',' or end of parameter list");
             }
             ht_put(h, m.start, m.size, nargs);
-            ++nargs;
             ident_expected = false;
+            ++nargs;
+            if (nargs >> VM_NARGS_BITS) {
+                throw_at(p, m, "too many parameters");
+            }
         } else if (m.kind == LEX_KIND_COMMA) {
             if (nargs == 0) {
                 throw_at(p, m, "expected parameter name or end of parameter list");
@@ -605,7 +608,7 @@ stmt(Parser *p)
                 throw_at(p, m, "'break' outside of a cycle");
             }
             fixup_stack_last_push(&p->fixup_loop_break, p->chunk.size);
-            INSTR_N(p, CMD_JUMP);
+            INSTR_1N(p, CMD_JUMP);
             return end_of_stmt(p);
         }
         break;
@@ -616,7 +619,7 @@ stmt(Parser *p)
                 throw_at(p, m, "'next' outside of a cycle");
             }
             fixup_stack_last_push(&p->fixup_loop_next, p->chunk.size);
-            INSTR_N(p, CMD_JUMP);
+            INSTR_1N(p, CMD_JUMP);
             return end_of_stmt(p);
         }
         break;
@@ -630,7 +633,7 @@ stmt(Parser *p)
             LS_VECTOR_PUSH(p->fixup_cond, (FixupList) LS_VECTOR_NEW());
 
             size_t prev_jump_unless = p->chunk.size;
-            INSTR_N(p, CMD_JUMP_UNLESS);
+            INSTR_1N(p, CMD_JUMP_UNLESS);
 
             bool else_seen = false;
             while (1) {
@@ -645,7 +648,7 @@ stmt(Parser *p)
                     }
 
                     fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
-                    INSTR_N(p, CMD_JUMP);
+                    INSTR_1N(p, CMD_JUMP);
 
                     p->chunk.data[prev_jump_unless].args.offset = p->chunk.size - prev_jump_unless;
 
@@ -653,7 +656,7 @@ stmt(Parser *p)
                         throw_there(p, "expected 'then'");
                     }
                     prev_jump_unless = p->chunk.size;
-                    INSTR_N(p, CMD_JUMP_UNLESS);
+                    INSTR_1N(p, CMD_JUMP_UNLESS);
 
                 } else if (s == STOP_TOK_ELSE) {
                     if (else_seen) {
@@ -661,7 +664,7 @@ stmt(Parser *p)
                     }
 
                     fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
-                    INSTR_N(p, CMD_JUMP);
+                    INSTR_1N(p, CMD_JUMP);
 
                     p->chunk.data[prev_jump_unless].args.offset = p->chunk.size - prev_jump_unless;
 
@@ -699,7 +702,7 @@ stmt(Parser *p)
             }
 
             const size_t jump_instr = p->chunk.size;
-            INSTR_N(p, CMD_JUMP_UNLESS);
+            INSTR_1N(p, CMD_JUMP_UNLESS);
 
             StopTokenKind s;
             while ((s = stmt(p)) == STOP_TOK_SEMICOLON) {}
@@ -749,7 +752,7 @@ stmt(Parser *p)
             }
 
             const size_t jump_instr = p->chunk.size;
-            INSTR_N(p, CMD_JUMP_UNLESS);
+            INSTR_1N(p, CMD_JUMP_UNLESS);
 
             // assignment
             p->line = 0;
@@ -792,7 +795,7 @@ stmt(Parser *p)
 
     case LEX_KIND_EXIT:
         {
-            INSTR_N(p, CMD_EXIT);
+            INSTR_1N(p, CMD_EXIT);
             return end_of_stmt(p);
         }
         break;
@@ -800,7 +803,7 @@ stmt(Parser *p)
     case LEX_KIND_RETURN:
         {
             StopTokenKind s = expr(p, -1);
-            INSTR_N(p, CMD_RETURN);
+            INSTR_1N(p, CMD_RETURN);
             switch (s) {
             case STOP_TOK_SEMICOLON:
                 return STOP_TOK_SEMICOLON;
@@ -845,7 +848,7 @@ stmt(Parser *p)
             switch (s) {
             case STOP_TOK_SEMICOLON:
             case STOP_TOK_EOF:
-                INSTR_N(p, CMD_PRINT);
+                INSTR_1N(p, CMD_PRINT);
                 return s;
             case STOP_TOK_EQ:
             case STOP_TOK_COLON_EQ:
@@ -904,9 +907,9 @@ parser_parse(Parser *p)
 
     func_end(p, fu_instr);
 
-    INSTR_N(p, CMD_CALL);
-    INSTR_N(p, CMD_PRINT);
-    INSTR_N(p, CMD_EXIT);
+    INSTR_1N(p, CMD_CALL);
+    INSTR_1N(p, CMD_PRINT);
+    INSTR_1N(p, CMD_EXIT);
 
     return true;
 }

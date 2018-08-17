@@ -33,7 +33,7 @@ typedef struct {
 } ExecError;
 
 Runtime
-runtime_new(void);
+runtime_new(void *userdata);
 
 void
 runtime_reg_op(Runtime r, const char *sym, Op op);

@@ -5,13 +5,13 @@
 #include <string.h>
 
 Runtime
-runtime_new(void)
+runtime_new(void *userdata)
 {
     Runtime r;
     r.ops = trie_new(TRIE_NRESERVE_DEFAULT);
     r.lexer = lexer_new(r.ops);
     r.parser = parser_new(r.lexer);
-    r.env = env_new();
+    r.env = env_new(userdata);
     return r;
 }
 
