@@ -56,6 +56,22 @@ env_put(Env *e, const char *name, size_t nname, Value value)
     }
 }
 
+static
+void
+print_stackframe(const Instr *ip, const char *src, bool first)
+{
+    if (!src) {
+        return;
+    }
+    do {
+        --ip;
+    } while (ip->cmd != CMD_QUARK);
+    fprintf(stderr, "\t%s %s at line %u\n",
+            first ? "in" : "by",
+            src,
+            ip->args.nline);
+}
+
 bool
 env_eval(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
 {
@@ -280,7 +296,7 @@ env_eval(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                         LS_VECTOR_PUSH(callstack, ((Callsite) {
                             .site = site + 1,
                             .stackpos = stack.size - f->nargs,
-                            .src = f->strdups,
+                            .src = f->src,
                         }));
 
                         for (unsigned i = 0; i < f->nlocals; ++i) {
@@ -383,18 +399,11 @@ do_not_goto_me:
         assert(!size1);
         assert(!size2);
     } else {
-        do {
-            --ip;
-        } while (ip->cmd != CMD_QUARK);
-        fprintf(stderr, "Error: %s\nStacktrace:\n", e->err);
-        fprintf(stderr, "\tin %s at line %u\n", data2[size2 - 1].src, ip->args.nline);
+        fprintf(stderr, "Error: %s\n", e->err);
+        print_stackframe(ip, data2[size2 - 1].src, true);
 
         for (size_t i = size2 - 1; i; --i) {
-            const Instr *ptr = data2[i].site;
-            do {
-                --ptr;
-            } while (ptr->cmd != CMD_QUARK);
-            fprintf(stderr, "\tby %s at line %u\n", data2[i - 1].src, ptr->args.nline);
+            print_stackframe(data2[i].site, data2[i - 1].src, false);
         }
     }
     for (size_t i = 0; i < size1; ++i) {

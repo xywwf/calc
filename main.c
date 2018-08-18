@@ -647,7 +647,7 @@ repl(Runtime rt)
         add_history(expr);
         const size_t nexpr = strlen(expr);
 
-        ExecError err = runtime_exec(rt, "(REPL)", expr, nexpr);
+        ExecError err = runtime_exec(rt, NULL, expr, nexpr);
         switch (err.kind) {
         case ERR_KIND_OK:
             break;

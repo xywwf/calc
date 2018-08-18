@@ -9,11 +9,11 @@ func_new(unsigned nargs, unsigned nlocals, const char *src, const Instr *chunk, 
     f->gchdr.nrefs = 1;
     f->nargs = nargs;
     f->nlocals = nlocals;
+    f->src = src ? ls_xstrdup(src) : NULL;
     f->nchunk = nchunk;
     memcpy(f->chunk, chunk, nchunk * sizeof(Instr));
 
-    const size_t nsrc = strlen(src);
-    LSString strdups = ls_string_new_from_b(src, nsrc + 1);
+    LSString strdups = LS_VECTOR_NEW();
 
 #define XPAND_FOR_STR() \
     for (size_t i = 0; i < nchunk; ++i) { \
@@ -28,13 +28,13 @@ func_new(unsigned nargs, unsigned nlocals, const char *src, const Instr *chunk, 
         } \
     }
 
-    size_t offset = strdups.size;
-
 #define X(S_, NS_) ls_string_append_b(&strdups, S_, NS_)
     XPAND_FOR_STR()
 #undef X
 
     LS_VECTOR_SHRINK(strdups);
+
+    size_t offset = 0;
 
 #define X(S_, NS_) S_ = strdups.data + offset, offset += NS_
     XPAND_FOR_STR()
@@ -48,5 +48,6 @@ func_new(unsigned nargs, unsigned nlocals, const char *src, const Instr *chunk, 
 void
 func_destroy(Func *f)
 {
+    free(f->src);
     free(f->strdups);
 }

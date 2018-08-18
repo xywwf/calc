@@ -11,7 +11,8 @@ typedef struct {
     GcObject gchdr;
     unsigned nargs;
     unsigned nlocals;
-    char * strdups;
+    char *src;
+    char *strdups;
     size_t nchunk;
     Instr chunk[];
 } Func;
