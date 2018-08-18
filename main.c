@@ -609,6 +609,7 @@ dofd(Runtime rt, const char *name, int fd)
         const ssize_t r = read(fd, buf + size, capacity - size);
         if (r < 0) {
             perror(name);
+            free(buf);
             return false;
         } else if (r == 0) {
             break;

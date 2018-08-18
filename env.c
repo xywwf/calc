@@ -73,7 +73,7 @@ print_stackframe(const Instr *ip, const char *src, bool first)
 }
 
 bool
-env_eval(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
+env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
 {
     (void) nchunk;
     volatile bool ok = false;
@@ -426,12 +426,6 @@ env_throw(Env *e, const char *fmt, ...)
     vsnprintf(e->err, sizeof(e->err), fmt, vl);
     va_end(vl);
     longjmp(e->err_handler, 1);
-}
-
-const char *
-env_last_error(Env *e)
-{
-    return e->err;
 }
 
 void

@@ -165,7 +165,7 @@ Or, using `for`,
         end
     end
 
-`next` instruction (== `continue` in some other languages) is also supported.
+`continue` instruction is also supported.
 
 Functions & local variables
 ---

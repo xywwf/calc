@@ -178,19 +178,19 @@ lexer_next(Lexer *x)
             } \
         } while (0)
 
-        KEYWORD("if", LEX_KIND_IF);
-        KEYWORD("then", LEX_KIND_THEN);
-        KEYWORD("elif", LEX_KIND_ELIF);
-        KEYWORD("else", LEX_KIND_ELSE);
-        KEYWORD("while", LEX_KIND_WHILE);
-        KEYWORD("for", LEX_KIND_FOR);
-        KEYWORD("do", LEX_KIND_DO);
-        KEYWORD("break", LEX_KIND_BREAK);
-        KEYWORD("next", LEX_KIND_NEXT);
-        KEYWORD("fu", LEX_KIND_FU);
-        KEYWORD("return", LEX_KIND_RETURN);
-        KEYWORD("exit", LEX_KIND_EXIT);
-        KEYWORD("end", LEX_KIND_END);
+        KEYWORD("if",           LEX_KIND_IF);
+        KEYWORD("then",         LEX_KIND_THEN);
+        KEYWORD("elif",         LEX_KIND_ELIF);
+        KEYWORD("else",         LEX_KIND_ELSE);
+        KEYWORD("while",        LEX_KIND_WHILE);
+        KEYWORD("for",          LEX_KIND_FOR);
+        KEYWORD("do",           LEX_KIND_DO);
+        KEYWORD("break",        LEX_KIND_BREAK);
+        KEYWORD("continue",     LEX_KIND_CONTINUE);
+        KEYWORD("fu",           LEX_KIND_FU);
+        KEYWORD("return",       LEX_KIND_RETURN);
+        KEYWORD("exit",         LEX_KIND_EXIT);
+        KEYWORD("end",          LEX_KIND_END);
 
 #undef KEYWORD
 
@@ -207,6 +207,7 @@ lexer_next(Lexer *x)
 
     r.size = x->cur - r.start;
     return r;
+#undef RET
 }
 
 void

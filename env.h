@@ -18,10 +18,7 @@ void
 env_put(Env *e, const char *name, size_t nname, Value value);
 
 bool
-env_eval(Env *e, const char *src, const Instr *chunk, size_t nchunk);
-
-const char *
-env_last_error(Env *e);
+env_exec(Env *e, const char *src, const Instr *chunk, size_t nchunk);
 
 LS_ATTR_NORETURN LS_ATTR_PRINTF(2, 3)
 void

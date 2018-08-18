@@ -30,7 +30,7 @@ typedef enum {
     LEX_KIND_FOR,
     LEX_KIND_DO,
     LEX_KIND_BREAK,
-    LEX_KIND_NEXT,
+    LEX_KIND_CONTINUE,
     LEX_KIND_FU,
     LEX_KIND_RETURN,
     LEX_KIND_EXIT,

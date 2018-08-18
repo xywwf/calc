@@ -6,7 +6,8 @@
 void *
 osdep_rng_new(void)
 {
-    return ""; // definitely not NULL
+    static char dummy;
+    return &dummy; // definitely not NULL
 }
 
 bool

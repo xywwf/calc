@@ -55,10 +55,8 @@ runtime_exec(Runtime r, const char *name, const char *buf, size_t nbuf)
     if (r.dflag) {
         disasm_print(chunk, nchunk);
     } else {
-        if (!env_eval(r.env, name, chunk, nchunk)) {
-            return (ExecError) {
-                .kind = ERR_KIND_RTIME,
-            };
+        if (!env_exec(r.env, name, chunk, nchunk)) {
+            return (ExecError) {.kind = ERR_KIND_RTIME};
         }
     }
     return (ExecError) {.kind = ERR_KIND_OK};

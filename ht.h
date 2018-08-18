@@ -9,7 +9,7 @@ static const HtValue HT_NO_VALUE = (HtValue) -1;
 typedef struct Ht Ht;
 
 Ht *
-ht_new(unsigned char order);
+ht_new(unsigned char rank);
 
 HtValue
 ht_put(Ht *h, const char *key, size_t nkey, HtValue value);
