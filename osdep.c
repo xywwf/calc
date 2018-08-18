@@ -2,6 +2,26 @@
 
 #ifdef __MINGW32__
 #   include <windows.h>
+#   include <ntstatus.h>
+
+int OSDEP_UTF8_READY = 0;
+
+bool
+osdep_is_interactive(void)
+{
+    HANDLE h_in = GetStdHandle(STD_INPUT_HANDLE);
+    if (h_in == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    if (GetFileType(h_in) != FILE_TYPE_CHAR) {
+        return false;
+    }
+    DWORD ignored;
+    if (GetConsoleMode(h_in, &ignored) != 0) {
+        return true;
+    }
+    return false;
+}
 
 void *
 osdep_rng_new(void)
@@ -27,6 +47,23 @@ osdep_rng_destroy(void *handle)
 #else
 #   include <unistd.h>
 #   include <fcntl.h>
+#   include <stdlib.h>
+#   include <string.h>
+
+int OSDEP_UTF8_READY = 1;
+
+bool
+osdep_is_interactive(void)
+{
+    if (!isatty(0)) {
+        return false;
+    }
+    const char *term = getenv("TERM");
+    if (!term || strcmp(term, "") == 0 || strcmp(term, "dumb") == 0) {
+        return false;
+    }
+    return true;
+}
 
 void *
 osdep_rng_new(void)

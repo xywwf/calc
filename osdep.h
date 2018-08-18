@@ -3,6 +3,11 @@
 
 #include "common.h"
 
+extern int OSDEP_UTF8_READY;
+
+bool
+osdep_is_interactive(void);
+
 void *
 osdep_rng_new(void);
 

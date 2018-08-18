@@ -231,3 +231,7 @@ Caveats
 ===
 
 - There’s no specialized memory allocator. Link with jemalloc or something if you have to.
+
+![Г|-...](https://user-images.githubusercontent.com/5462697/44303839-eab2ce80-a353-11e8-97cf-cd6c992b4fd4.png)
+
+It works under freakin’ Windows!

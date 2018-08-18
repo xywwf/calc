@@ -513,25 +513,26 @@ X_Input(Env *e, const Value *args, unsigned nargs)
         env_throw(e, "'Input' takes no arguments");
     }
 
-    char *buf;
+    char buf[32];
     if (is_interactive) {
-        buf = readline("[Input] » ");
-        if (!buf) {
+        char *alloc = readline("[Input] -> ");
+        if (!alloc) {
             goto error;
         }
+        const size_t nalloc = strlen(alloc);
+        if (nalloc > sizeof(buf) - 1) {
+            memcpy(buf, alloc, sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
+        } else {
+            memcpy(buf, alloc, nalloc + 1);
+        }
+        free(alloc);
     } else {
-        buf = NULL;
-        size_t capacity = 0;
-        if (getline(&buf, &capacity, stdin) < 0) {
-            if (!feof(stdin)) {
-                perror("getline");
-            }
-            free(buf);
+        if (fgets(buf, sizeof(buf), stdin) == NULL) {
             goto error;
         }
     }
     const Scalar r = strtod(buf, NULL);
-    free(buf);
     return MK_SCL(r);
 
 error:
@@ -547,20 +548,6 @@ X_Clock(Env *e, const Value *args, unsigned nargs)
         env_throw(e, "'Clock' takes no arguments");
     }
     return MK_SCL(clock() / (Scalar) CLOCKS_PER_SEC);
-}
-
-static
-bool
-detect_tty(void)
-{
-    if (!isatty(0)) {
-        return false;
-    }
-    const char *term = getenv("TERM");
-    if (!term || strcmp(term, "") == 0 || strcmp(term, "dumb") == 0) {
-        return false;
-    }
-    return true;
 }
 
 static
@@ -640,7 +627,7 @@ void
 repl(Runtime rt)
 {
     while (1) {
-        char *expr = readline("≈≈> ");
+        char *expr = readline(OSDEP_UTF8_READY ? "≈≈> " : "==> ");
         if (!expr) {
             fputc('\n', stderr);
             return;
@@ -715,7 +702,7 @@ main(int argc, char **argv)
         }
     }
 
-    is_interactive = detect_tty();
+    is_interactive = iflag || osdep_is_interactive();
 
     Runtime rt = runtime_new(userdata_new());
     rt.dflag = dflag;
@@ -785,7 +772,7 @@ main(int argc, char **argv)
                 ret = EXIT_SUCCESS;
             }
         } else {
-            if (iflag || is_interactive) {
+            if (is_interactive) {
                 repl(rt);
             } else {
                 if (dofd(rt, "(stdin)", 0)) {
