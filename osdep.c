@@ -26,8 +26,7 @@ osdep_is_interactive(void)
 void *
 osdep_rng_new(void)
 {
-    static char dummy;
-    return &dummy; // definitely not NULL
+    return ""; // definitely not NULL
 }
 
 bool
