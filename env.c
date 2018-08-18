@@ -64,7 +64,7 @@ env_eval(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
     LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
     LS_VECTOR_OF(Callsite) callstack = LS_VECTOR_NEW();
 
-    Instr const *volatile ip = NULL;
+    Instr const *volatile ip;
     Value       *volatile data1;
     size_t       volatile size1;
     Callsite    *volatile data2;
@@ -386,14 +386,15 @@ do_not_goto_me:
         do {
             --ip;
         } while (ip->cmd != CMD_QUARK);
-        fprintf(stderr, "  Error in %s at line %u\n", data2[size2 - 1].src, ip->args.nline);
+        fprintf(stderr, "Error: %s\nStacktrace:\n", e->err);
+        fprintf(stderr, "\tin %s at line %u\n", data2[size2 - 1].src, ip->args.nline);
 
         for (size_t i = size2 - 1; i; --i) {
             const Instr *ptr = data2[i].site;
             do {
                 --ptr;
             } while (ptr->cmd != CMD_QUARK);
-            fprintf(stderr, " called by %s at line %u\n", data2[i - 1].src, ptr->args.nline);
+            fprintf(stderr, "\tby %s at line %u\n", data2[i - 1].src, ptr->args.nline);
         }
     }
     for (size_t i = 0; i < size1; ++i) {

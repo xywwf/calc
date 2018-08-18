@@ -23,7 +23,7 @@ typedef enum {
     ERR_KIND_OK,
     ERR_KIND_CTIME_HAS_POS,
     ERR_KIND_CTIME_NO_POS,
-    ERR_KIND_RTIME_NO_POS,
+    ERR_KIND_RTIME,
 } ExecErrorKind;
 
 typedef struct {

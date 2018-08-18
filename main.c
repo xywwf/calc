@@ -587,8 +587,9 @@ dostring(Runtime rt, const char *name, const char *buf, size_t nbuf)
         }
         return false;
     case ERR_KIND_CTIME_NO_POS:
-    case ERR_KIND_RTIME_NO_POS:
         fprintf(stderr, "%s: %s\n", name, err.msg);
+        return false;
+    case ERR_KIND_RTIME:
         return false;
     }
     LS_UNREACHABLE();
@@ -669,8 +670,9 @@ repl(Runtime rt)
             }
             break;
         case ERR_KIND_CTIME_NO_POS:
-        case ERR_KIND_RTIME_NO_POS:
             fprintf(stderr, "%s\n", err.msg);
+        case ERR_KIND_RTIME:
+            break;
         }
         free(expr);
     }

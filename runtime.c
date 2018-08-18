@@ -57,8 +57,7 @@ runtime_exec(Runtime r, const char *name, const char *buf, size_t nbuf)
     } else {
         if (!env_eval(r.env, name, chunk, nchunk)) {
             return (ExecError) {
-                .kind = ERR_KIND_RTIME_NO_POS,
-                .msg = env_last_error(r.env),
+                .kind = ERR_KIND_RTIME,
             };
         }
     }
