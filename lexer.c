@@ -169,11 +169,11 @@ lexer_next(Lexer *x)
             ++x->cur;
         } while (x->cur != x->last && is_ident_part(*x->cur));
 
+        const size_t n = x->cur - r.start;
+
 #define KEYWORD(Lit_, LexKind_) \
         do { \
-            if (x->cur - r.start == sizeof(Lit_) - 1 && \
-                memcmp(r.start, Lit_, sizeof(Lit_) - 1) == 0) \
-            { \
+            if (n == sizeof(Lit_) - 1 && memcmp(r.start, Lit_, n) == 0) { \
                 r.kind = LexKind_; \
             } \
         } while (0)

@@ -220,6 +220,7 @@ Built-in functions
   * `Kind(v)` returns the type name of `v` as a string
   * `Rand()` returns a random number in `[0, 1)`
   * `Input()` reads a number from stdin
+  * `Clock()` returns the CPU time, in seconds, used by the program.
 
 Built-in constants
 ---
