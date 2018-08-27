@@ -96,8 +96,9 @@ parser_new(Lexer *lex)
     return p;
 }
 
+static
 void
-parser_reset(Parser *p)
+reset(Parser *p)
 {
     p->expr_end = false;
     LS_VECTOR_CLEAR(p->chunk);
@@ -893,6 +894,8 @@ stmt(Parser *p)
 bool
 parser_parse(Parser *p)
 {
+    reset(p);
+
     if (setjmp(p->err_handler) != 0) {
         return false;
     }

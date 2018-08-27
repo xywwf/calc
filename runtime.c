@@ -41,7 +41,6 @@ ExecError
 runtime_exec(Runtime r, const char *name, const char *buf, size_t nbuf)
 {
     lexer_reset(r.lexer, buf, nbuf);
-    parser_reset(r.parser);
     if (!parser_parse(r.parser)) {
         ParserError err = parser_last_error(r.parser);
         return (ExecError) {

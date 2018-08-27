@@ -175,6 +175,7 @@ lexer_next(Lexer *x)
         do { \
             if (n == sizeof(Lit_) - 1 && memcmp(r.start, Lit_, n) == 0) { \
                 r.kind = LexKind_; \
+                goto done; \
             } \
         } while (0)
 
@@ -191,8 +192,9 @@ lexer_next(Lexer *x)
         KEYWORD("return",       LEX_KIND_RETURN);
         KEYWORD("exit",         LEX_KIND_EXIT);
         KEYWORD("end",          LEX_KIND_END);
-
 #undef KEYWORD
+done:
+    (void) 0;
 
     } else {
         size_t len;
