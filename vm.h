@@ -4,7 +4,7 @@
 #include "common.h"
 #include "value.h"
 
-#define VM_NARGS_BITS 5
+#define VM_MAX_NARGS 255
 
 struct Env;
 
@@ -69,8 +69,8 @@ typedef struct {
         // CMD_FUNCTION
         struct {
             int offset;
-            unsigned nargs   : VM_NARGS_BITS;
-            unsigned nlocals : (32 - VM_NARGS_BITS);
+            unsigned nargs;
+            unsigned nlocals;
         } func;
 
         // CMD_QUARK

@@ -17,13 +17,13 @@ func_new(unsigned nargs, unsigned nlocals, const char *src, const Instr *chunk, 
 
     for (size_t i = 0; i < nchunk; ++i) {
         switch (f->chunk[i].cmd) {
-            case CMD_LOAD:
-            case CMD_STORE:
-            case CMD_LOAD_STR:
-                ls_string_append_b(&strdups, f->chunk[i].args.str.start, f->chunk[i].args.str.size);
-                break;
-            default:
-                break;
+        case CMD_LOAD:
+        case CMD_STORE:
+        case CMD_LOAD_STR:
+            ls_string_append_b(&strdups, f->chunk[i].args.str.start, f->chunk[i].args.str.size);
+            break;
+        default:
+            break;
         }
     }
 
@@ -33,14 +33,14 @@ func_new(unsigned nargs, unsigned nlocals, const char *src, const Instr *chunk, 
 
     for (size_t i = 0; i < nchunk; ++i) {
         switch (f->chunk[i].cmd) {
-            case CMD_LOAD:
-            case CMD_STORE:
-            case CMD_LOAD_STR:
-                f->chunk[i].args.str.start = strdups.data + offset;
-                offset += f->chunk[i].args.str.size;
-                break;
-            default:
-                break;
+        case CMD_LOAD:
+        case CMD_STORE:
+        case CMD_LOAD_STR:
+            f->chunk[i].args.str.start = strdups.data + offset;
+            offset += f->chunk[i].args.str.size;
+            break;
+        default:
+            break;
         }
     }
 

@@ -322,7 +322,7 @@ paramlist(Parser *p, LexemKind terminator)
             ht_put(h, m.start, m.size, nargs);
             ident_expected = false;
             ++nargs;
-            if (nargs >> VM_NARGS_BITS) {
+            if (nargs > VM_MAX_NARGS) {
                 throw_at(p, m, "too many parameters");
             }
         } else if (m.kind == LEX_KIND_COMMA) {
