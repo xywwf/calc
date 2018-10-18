@@ -1,3 +1,0 @@
-- add support for vector/matrix reallocation?
-- add support for mpfr/biginteger/bigrational/bigdecimal arithmetics?
-- get rid of `libls/'.
