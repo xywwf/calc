@@ -1,14 +1,5 @@
 #include "common.h"
 
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <readline/readline.h>
-#include <readline/history.h>
-#include <time.h>
-
 #include "runtime.h"
 #include "op.h"
 #include "trie.h"
@@ -20,6 +11,13 @@
 #include "disasm.h"
 #include "osdep.h"
 
+#include <math.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <readline/readline.h>
+#include <readline/history.h>
+#include <time.h>
+
 typedef struct {
     void *rng_handle;
 } UserData;
@@ -28,7 +26,7 @@ static inline
 UserData *
 userdata_new(void)
 {
-    UserData *ud = LS_XNEW(UserData, 1);
+    UserData *ud = XNEW(UserData, 1);
     *ud = (UserData) {0};
     return ud;
 }
@@ -231,7 +229,7 @@ X_eq(Env *e, Value a, Value b)
     case VAL_KIND_STR:
         return MK_SCL(str_eq(AS_STR(a), AS_STR(b)));
     }
-    LS_UNREACHABLE();
+    UNREACHABLE();
 }
 
 static
@@ -270,7 +268,7 @@ X_ne(Env *e, Value a, Value b)
     case VAL_KIND_STR:
         return MK_SCL(!str_eq(AS_STR(a), AS_STR(b)));
     }
-    LS_UNREACHABLE();
+    UNREACHABLE();
 }
 
 static
@@ -482,7 +480,7 @@ repr(char *buf, size_t nbuf, size_t *len, Value v)
         *len = snprintf(buf, nbuf, "<built-in function>");
         return buf;
     }
-    LS_UNREACHABLE();
+    UNREACHABLE();
 }
 
 static
@@ -579,7 +577,7 @@ dostring(Runtime rt, const char *name, const char *buf, size_t nbuf)
     case ERR_KIND_RTIME:
         return false;
     }
-    LS_UNREACHABLE();
+    UNREACHABLE();
 }
 
 static
@@ -591,7 +589,7 @@ dofd(Runtime rt, const char *name, int fd)
     size_t capacity = 0;
     while (1) {
         if (size == capacity) {
-            buf = ls_x2realloc(buf, &capacity, 1);
+            buf = x2realloc(buf, &capacity, 1);
         }
         const ssize_t r = read(fd, buf + size, capacity - size);
         if (r < 0) {
@@ -698,7 +696,7 @@ main(int argc, char **argv)
             usage();
             break;
         default:
-            LS_UNREACHABLE();
+            UNREACHABLE();
         }
     }
 

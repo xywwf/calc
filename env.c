@@ -3,15 +3,7 @@
 #include "func.h"
 #include "matrix.h"
 #include "str.h"
-
-#include <string.h>
-#include <setjmp.h>
-#include <stdarg.h>
-#include <assert.h>
-
-#include <stdio.h>
-
-#include "libls/vector.h"
+#include "vector.h"
 
 typedef struct {
     const Instr *site;
@@ -20,7 +12,7 @@ typedef struct {
 } Callsite;
 
 struct Env {
-    LS_VECTOR_OF(Value) gs;
+    VECTOR_OF(Value) gs;
     Ht *gt;
     jmp_buf err_handler;
     char err[1024];
@@ -30,8 +22,8 @@ struct Env {
 Env *
 env_new(void *userdata)
 {
-    Env *e = LS_XNEW(Env, 1);
-    LS_VECTOR_INIT(e->gs);
+    Env *e = XNEW(Env, 1);
+    VECTOR_INIT(e->gs);
     e->gt = ht_new(6);
     e->userdata = userdata;
     return e;
@@ -49,7 +41,7 @@ env_put(Env *e, const char *name, size_t nname, Value value)
     value_ref(value);
     const HtValue res = ht_put(e->gt, name, nname, e->gs.size);
     if (res == e->gs.size) {
-        LS_VECTOR_PUSH(e->gs, value);
+        VECTOR_PUSH(e->gs, value);
     } else {
         value_unref(e->gs.data[res]);
         e->gs.data[res] = value;
@@ -77,8 +69,8 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
 {
     (void) nchunk;
     volatile bool ok = false;
-    LS_VECTOR_OF(Value) stack = LS_VECTOR_NEW();
-    LS_VECTOR_OF(Callsite) callstack = LS_VECTOR_NEW();
+    VECTOR_OF(Value) stack = VECTOR_NEW();
+    VECTOR_OF(Callsite) callstack = VECTOR_NEW();
 
     Instr const *volatile ip;
     Value       *volatile data1;
@@ -127,13 +119,13 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
             break;
 
         case CMD_LOAD_SCALAR:
-            LS_VECTOR_PUSH(stack, MK_SCL(in.args.scalar));
+            VECTOR_PUSH(stack, MK_SCL(in.args.scalar));
             break;
 
         case CMD_LOAD_STR:
             {
                 Str *s = str_new_unescape(in.args.str.start + 1, in.args.str.size - 2);
-                LS_VECTOR_PUSH(stack, MK_STR(s));
+                VECTOR_PUSH(stack, MK_STR(s));
             }
             break;
 
@@ -145,7 +137,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 }
                 Value value = e->gs.data[index];
                 value_ref(value);
-                LS_VECTOR_PUSH(stack, value);
+                VECTOR_PUSH(stack, value);
             }
             break;
 
@@ -155,7 +147,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 Value value = stack.data[prev_pos + in.args.index];
 
                 value_ref(value);
-                LS_VECTOR_PUSH(stack, value);
+                VECTOR_PUSH(stack, value);
             }
             break;
 
@@ -164,7 +156,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 Value value = stack.data[--stack.size];
                 const HtValue res = ht_put(e->gt, in.args.str.start, in.args.str.size, e->gs.size);
                 if (res == e->gs.size) {
-                    LS_VECTOR_PUSH(e->gs, value);
+                    VECTOR_PUSH(e->gs, value);
                 } else {
                     value_unref(e->gs.data[res]);
                     e->gs.data[res] = value;
@@ -293,14 +285,14 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                             ERR("wrong number of arguments");
                         }
 
-                        LS_VECTOR_PUSH(callstack, ((Callsite) {
+                        VECTOR_PUSH(callstack, ((Callsite) {
                             .site = site + 1,
                             .stackpos = stack.size - f->nargs,
                             .src = f->src,
                         }));
 
                         for (unsigned i = 0; i < f->nlocals; ++i) {
-                            LS_VECTOR_PUSH(stack, MK_NIL());
+                            VECTOR_PUSH(stack, MK_NIL());
                         }
 
                         site = f->chunk;
@@ -327,7 +319,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 // </danger>
 
                 stack.size -= nelems;
-                LS_VECTOR_PUSH(stack, MK_MAT(m));
+                VECTOR_PUSH(stack, MK_MAT(m));
             }
             break;
 
@@ -357,7 +349,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                     callstack.size ? callstack.data[callstack.size - 1].src : src,
                     site + 1,
                     in.args.func.offset - 1);
-                LS_VECTOR_PUSH(stack, MK_FUNC(f));
+                VECTOR_PUSH(stack, MK_FUNC(f));
                 site += in.args.func.offset;
             }
             continue;
@@ -367,7 +359,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 ok = true;
                 DONE();
             }
-            LS_VECTOR_PUSH(stack, MK_NIL());
+            VECTOR_PUSH(stack, MK_NIL());
             // fall through
         case CMD_RETURN:
             {
@@ -435,6 +427,6 @@ env_destroy(Env *e)
     for (size_t i = 0; i < e->gs.size; ++i) {
         value_unref(e->gs.data[i]);
     }
-    LS_VECTOR_FREE(e->gs);
+    VECTOR_FREE(e->gs);
     free(e);
 }

@@ -1,7 +1,5 @@
 #include "trie.h"
 
-#include <string.h>
-
 typedef uint_least32_t UIndex;
 
 typedef struct {
@@ -17,16 +15,6 @@ struct Trie {
 };
 
 static inline
-void *
-x2realloc0(void *p, size_t *pnelems, size_t elemsz)
-{
-    const size_t oldnelems = *pnelems;
-    p = ls_x2realloc(p, pnelems, elemsz);
-    memset((char *) p + elemsz * oldnelems, 0, elemsz * (*pnelems - oldnelems));
-    return p;
-}
-
-static inline
 size_t
 add_node(Trie *t)
 {
@@ -39,9 +27,9 @@ add_node(Trie *t)
 Trie *
 trie_new(size_t nreserve)
 {
-    Trie *t = LS_XNEW(Trie, 1);
+    Trie *t = XNEW(Trie, 1);
     *t = (Trie) {
-        .nodes = LS_XNEW0(TrieNode, nreserve),
+        .nodes = XNEW0(TrieNode, nreserve),
         .size = 0,
         .capacity = nreserve,
     };
@@ -53,13 +41,13 @@ void
 trie_insert(Trie *t, const char *key, LexemKind kind, void *data)
 {
     if (!key[0]) {
-        LS_PANIC("empty key");
+        PANIC("empty key");
     }
     UIndex p = 0;
     for (size_t i = 0; key[i]; ++i) {
         unsigned char c = key[i];
         if (c >= 128) {
-            LS_PANIC("non-ASCII character in key");
+            PANIC("non-ASCII character in key");
         }
         UIndex q = t->nodes[p].children[c];
         if (!q) {

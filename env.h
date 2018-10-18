@@ -20,7 +20,7 @@ env_put(Env *e, const char *name, size_t nname, Value value);
 bool
 env_exec(Env *e, const char *src, const Instr *chunk, size_t nchunk);
 
-LS_ATTR_NORETURN LS_ATTR_PRINTF(2, 3)
+ATTR_NORETURN ATTR_PRINTF(2, 3)
 void
 env_throw(Env *e, const char *fmt, ...);
 

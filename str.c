@@ -1,11 +1,9 @@
 #include "str.h"
 
-#include <string.h>
-
 Str *
 str_new(const char *buf, size_t nbuf)
 {
-    Str *s = ls_xmalloc(sizeof(Str) + nbuf, 1);
+    Str *s = xmalloc(sizeof(Str) + nbuf, 1);
     s->gchdr.nrefs = 1;
     s->ndata = nbuf;
     if (nbuf) {
@@ -17,7 +15,7 @@ str_new(const char *buf, size_t nbuf)
 Str *
 str_new_unescape(const char *buf, size_t nbuf)
 {
-    Str *s = ls_xmalloc(sizeof(Str) + nbuf, 1);
+    Str *s = xmalloc(sizeof(Str) + nbuf, 1);
     s->gchdr.nrefs = 1;
 
     char *ptr = s->data;
@@ -46,13 +44,13 @@ str_new_unescape(const char *buf, size_t nbuf)
     }
 
     s->ndata = ptr - s->data;
-    return ls_xrealloc(s, sizeof(Str) + s->ndata, 1);
+    return xrealloc(s, sizeof(Str) + s->ndata, 1);
 }
 
 Str *
 str_new_concat(const char *a, size_t na, const char *b, size_t nb)
 {
-    Str *s = ls_xmalloc(sizeof(Str) + na + nb, 1);
+    Str *s = xmalloc(sizeof(Str) + na + nb, 1);
     s->gchdr.nrefs = 1;
     s->ndata = na + nb;
     if (na) {

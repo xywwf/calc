@@ -1,7 +1,5 @@
 #include "common.h"
 
-#include <stdint.h>
-
 typedef uint_least32_t HtValue;
 
 static const HtValue HT_NO_VALUE = (HtValue) -1;

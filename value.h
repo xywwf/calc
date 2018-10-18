@@ -27,7 +27,7 @@ typedef enum {
     VAL_KIND_STR,
 } ValueKind;
 
-LS_INHEADER
+INHEADER
 const char *
 value_kindname(ValueKind kind)
 {
@@ -45,7 +45,7 @@ value_kindname(ValueKind kind)
     case VAL_KIND_STR:
         return "string";
     }
-    LS_UNREACHABLE();
+    UNREACHABLE();
 }
 
 typedef double Scalar;
@@ -66,7 +66,7 @@ typedef struct Value {
 void
 gcobject_destroy(Value v);
 
-LS_INHEADER
+INHEADER
 void
 value_ref(Value v)
 {
@@ -81,7 +81,7 @@ value_ref(Value v)
     }
 }
 
-LS_INHEADER
+INHEADER
 void
 value_unref(Value v)
 {

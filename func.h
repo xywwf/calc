@@ -5,8 +5,6 @@
 #include "value.h"
 #include "vm.h"
 
-#include "libls/string_.h"
-
 typedef struct {
     GcObject gchdr;
     unsigned nargs;

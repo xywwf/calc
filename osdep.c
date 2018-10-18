@@ -46,8 +46,6 @@ osdep_rng_destroy(void *handle)
 #else
 #   include <unistd.h>
 #   include <fcntl.h>
-#   include <stdlib.h>
-#   include <string.h>
 
 int OSDEP_UTF8_READY = 1;
 
@@ -67,7 +65,7 @@ osdep_is_interactive(void)
 void *
 osdep_rng_new(void)
 {
-    int *r = LS_XNEW(int, 1);
+    int *r = XNEW(int, 1);
     if ((*r = open("/dev/urandom", O_RDONLY)) < 0) {
         free(r);
         return NULL;

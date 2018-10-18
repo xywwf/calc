@@ -3,8 +3,6 @@
 #include "str.h"
 #include "func.h"
 
-#include <stdio.h>
-
 void
 gcobject_destroy(Value v)
 {
@@ -85,7 +83,7 @@ value_is_truthy(Value v)
     case VAL_KIND_STR:
         return AS_STR(v)->ndata;
     }
-    LS_UNREACHABLE();
+    UNREACHABLE();
 }
 
 bool

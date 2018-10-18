@@ -52,7 +52,7 @@ is_ident_part(char c)
 Lexer *
 lexer_new(Trie *opreg)
 {
-    Lexer *x = LS_XNEW(Lexer, 1);
+    Lexer *x = XNEW(Lexer, 1);
     *x = (Lexer) {
         .opreg = opreg,
     };

@@ -1,8 +1,5 @@
 #include "runtime.h"
-
 #include "disasm.h"
-
-#include <string.h>
 
 Runtime
 runtime_new(void *userdata)
@@ -18,17 +15,17 @@ runtime_new(void *userdata)
 void
 runtime_reg_op(Runtime r, const char *sym, Op op)
 {
-    trie_insert(r.ops, sym, LEX_KIND_OP, ls_xmemdup(&op, sizeof(op)));
+    trie_insert(r.ops, sym, LEX_KIND_OP, xmemdup(&op, sizeof(op)));
 }
 
 void
 runtime_reg_ambig_op(Runtime r, const char *sym, Op prefix, Op infix)
 {
     AmbigOp amb_op = {
-        .prefix = ls_xmemdup(&prefix, sizeof(prefix)),
-        .infix  = ls_xmemdup(&infix, sizeof(infix)),
+        .prefix = xmemdup(&prefix, sizeof(prefix)),
+        .infix  = xmemdup(&infix, sizeof(infix)),
     };
-    trie_insert(r.ops, sym, LEX_KIND_AMBIG_OP, ls_xmemdup(&amb_op, sizeof(amb_op)));
+    trie_insert(r.ops, sym, LEX_KIND_AMBIG_OP, xmemdup(&amb_op, sizeof(amb_op)));
 }
 
 void

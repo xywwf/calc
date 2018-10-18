@@ -1,7 +1,5 @@
 #include "disasm.h"
 
-#include <stdio.h>
-
 void
 disasm_print(const Instr *chunk, size_t nchunk)
 {

@@ -1,13 +1,11 @@
 #include "matrix.h"
 #include "env.h"
 
-#include <limits.h>
-
 Matrix *
 matrix_new(unsigned height, unsigned width)
 {
     const size_t nelems = xmul_mat_dims(height, width);
-    Matrix *m = ls_xcalloc(sizeof(Matrix) + nelems * sizeof(Scalar), 1);
+    Matrix *m = xcalloc(sizeof(Matrix) + nelems * sizeof(Scalar), 1);
     m->gchdr.nrefs = 1;
     m->height = height;
     m->width = width;

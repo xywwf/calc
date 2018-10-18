@@ -1,27 +1,24 @@
 #include "parser.h"
-#include <setjmp.h>
-
-#include "libls/vector.h"
-
 #include "value.h"
 #include "op.h"
 #include "vm.h"
 #include "ht.h"
+#include "vector.h"
 
-typedef LS_VECTOR_OF(Instr) Chunk;
+typedef VECTOR_OF(Instr) Chunk;
 
-typedef LS_VECTOR_OF(size_t) FixupList;
+typedef VECTOR_OF(size_t) FixupList;
 
-typedef LS_VECTOR_OF(FixupList) FixupStack;
+typedef VECTOR_OF(FixupList) FixupStack;
 
 static
 void
 fixup_stack_clear(FixupStack *fs)
 {
     for (size_t i = 0; i < fs->size; ++i) {
-        LS_VECTOR_FREE(fs->data[i]);
+        VECTOR_FREE(fs->data[i]);
     }
-    LS_VECTOR_CLEAR(*fs);
+    VECTOR_CLEAR(*fs);
 }
 
 static
@@ -29,40 +26,38 @@ void
 fixup_stack_free(FixupStack fs)
 {
     fixup_stack_clear(&fs);
-    LS_VECTOR_FREE(fs);
+    VECTOR_FREE(fs);
 }
 
 static inline
 void
 fixup_stack_last_push(FixupStack *fs, size_t fixup_pos)
 {
-    LS_VECTOR_PUSH(fs->data[fs->size - 1], fixup_pos);
+    VECTOR_PUSH(fs->data[fs->size - 1], fixup_pos);
 }
 
 static
 void
 fixup_forward(Instr *chunk, FixupStack *fs, size_t pos)
 {
-    FixupList fl = fs->data[fs->size - 1];
+    FixupList fl = VECTOR_POP(*fs);
     for (size_t i = 0; i < fl.size; ++i) {
         const size_t at = fl.data[i];
         chunk[at].args.offset = pos - at;
     }
-    LS_VECTOR_FREE(fl);
-    --fs->size;
+    VECTOR_FREE(fl);
 }
 
 static
 void
 fixup_backward(Instr *chunk, FixupStack *fs, size_t pos)
 {
-    FixupList fl = fs->data[fs->size - 1];
+    FixupList fl = VECTOR_POP(*fs);
     for (size_t i = 0; i < fl.size; ++i) {
         const size_t at = fl.data[i];
         chunk[at].args.offset = (ssize_t) pos - at - 1;
     }
-    LS_VECTOR_FREE(fl);
-    --fs->size;
+    VECTOR_FREE(fl);
 }
 
 struct Parser {
@@ -73,7 +68,7 @@ struct Parser {
     FixupStack fixup_cond;
     FixupStack fixup_loop_break;
     FixupStack fixup_loop_ctnue;
-    LS_VECTOR_OF(Ht *) locals;
+    VECTOR_OF(Ht *) locals;
     size_t bind_vars_from;
     unsigned line;
     jmp_buf err_handler;
@@ -83,15 +78,15 @@ struct Parser {
 Parser *
 parser_new(Lexer *lex)
 {
-    Parser *p = LS_XNEW(Parser, 1);
+    Parser *p = XNEW(Parser, 1);
     *p = (Parser) {
         .lex = lex,
-        .chunk = LS_VECTOR_NEW(),
-        .aux_chunk = LS_VECTOR_NEW(),
-        .fixup_cond = LS_VECTOR_NEW(),
-        .fixup_loop_break = LS_VECTOR_NEW(),
-        .fixup_loop_ctnue = LS_VECTOR_NEW(),
-        .locals = LS_VECTOR_NEW(),
+        .chunk = VECTOR_NEW(),
+        .aux_chunk = VECTOR_NEW(),
+        .fixup_cond = VECTOR_NEW(),
+        .fixup_loop_break = VECTOR_NEW(),
+        .fixup_loop_ctnue = VECTOR_NEW(),
+        .locals = VECTOR_NEW(),
     };
     return p;
 }
@@ -101,8 +96,8 @@ void
 reset(Parser *p)
 {
     p->expr_end = false;
-    LS_VECTOR_CLEAR(p->chunk);
-    LS_VECTOR_CLEAR(p->aux_chunk);
+    VECTOR_CLEAR(p->chunk);
+    VECTOR_CLEAR(p->aux_chunk);
     fixup_stack_clear(&p->fixup_cond);
     fixup_stack_clear(&p->fixup_loop_break);
     fixup_stack_clear(&p->fixup_loop_ctnue);
@@ -110,7 +105,7 @@ reset(Parser *p)
     for (size_t i = 0; i < p->locals.size; ++i) {
         ht_destroy(p->locals.data[i]);
     }
-    LS_VECTOR_CLEAR(p->locals);
+    VECTOR_CLEAR(p->locals);
 
     p->bind_vars_from = 0;
     p->line = 0;
@@ -138,7 +133,7 @@ typedef enum {
     STOP_TOK_END,
 } StopTokenKind;
 
-static LS_ATTR_NORETURN
+static ATTR_NORETURN
 void
 throw_at(Parser *p, Lexem pos, const char *msg)
 {
@@ -146,7 +141,7 @@ throw_at(Parser *p, Lexem pos, const char *msg)
     longjmp(p->err_handler, 1);
 }
 
-static inline LS_ATTR_NORETURN
+static inline ATTR_NORETURN
 void
 throw_there(Parser *p, const char *msg)
 {
@@ -159,20 +154,20 @@ void
 emit(Parser *p, Lexem pos, Instr in)
 {
     if (pos.line != p->line) {
-        LS_VECTOR_PUSH(p->chunk, ((Instr) {.cmd = CMD_QUARK, .args = {.nline = pos.line}}));
+        VECTOR_PUSH(p->chunk, ((Instr) {.cmd = CMD_QUARK, .args = {.nline = pos.line}}));
         p->line = pos.line;
     }
-    LS_VECTOR_PUSH(p->chunk, in);
+    VECTOR_PUSH(p->chunk, in);
 }
 
 #define INSTR(P_, M_, Cmd_, ...) \
     emit(P_, M_, (Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}})
 
 #define INSTR_1(P_, Cmd_, ...) \
-    LS_VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}}))
+    VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}}))
 
 #define INSTR_1N(P_, Cmd_) \
-    LS_VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_}))
+    VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_}))
 
 #define AFTER_EXPR(P_, M_) \
     do { \
@@ -280,7 +275,7 @@ func_begin(Parser *p)
     }
 
     Ht *h = ht_new(2);
-    LS_VECTOR_PUSH(p->locals, h);
+    VECTOR_PUSH(p->locals, h);
 
     INSTR_1N(p, CMD_FUNCTION);
     return p->chunk.size - 1;
@@ -292,7 +287,7 @@ func_end(Parser *p, size_t fu_instr)
 {
     bind_vars(p);
 
-    Ht *h = p->locals.data[--p->locals.size];
+    Ht *h = VECTOR_POP(p->locals);
     const size_t nlocalstbl = ht_size(h);
     ht_destroy(h);
 
@@ -631,7 +626,7 @@ stmt(Parser *p)
                 throw_there(p, "expected 'then'");
             }
 
-            LS_VECTOR_PUSH(p->fixup_cond, (FixupList) LS_VECTOR_NEW());
+            VECTOR_PUSH(p->fixup_cond, (FixupList) VECTOR_NEW());
 
             size_t prev_jump_unless = p->chunk.size;
             INSTR_1N(p, CMD_JUMP_UNLESS);
@@ -695,8 +690,8 @@ stmt(Parser *p)
         {
             const size_t check_instr = p->chunk.size;
 
-            LS_VECTOR_PUSH(p->fixup_loop_break, (FixupList) LS_VECTOR_NEW());
-            LS_VECTOR_PUSH(p->fixup_loop_ctnue,  (FixupList) LS_VECTOR_NEW());
+            VECTOR_PUSH(p->fixup_loop_break, (FixupList) VECTOR_NEW());
+            VECTOR_PUSH(p->fixup_loop_ctnue,  (FixupList) VECTOR_NEW());
 
             if (expr(p, -1) != STOP_TOK_DO) {
                 throw_there(p, "expected 'do'");
@@ -737,14 +732,14 @@ stmt(Parser *p)
                 throw_at(p, bar, "expected '|'");
             }
 
-            LS_VECTOR_PUSH(p->fixup_loop_break, (FixupList) LS_VECTOR_NEW());
-            LS_VECTOR_PUSH(p->fixup_loop_ctnue,  (FixupList) LS_VECTOR_NEW());
+            VECTOR_PUSH(p->fixup_loop_break, (FixupList) VECTOR_NEW());
+            VECTOR_PUSH(p->fixup_loop_ctnue,  (FixupList) VECTOR_NEW());
 
             // initial value
             if (expr(p, -1) != STOP_TOK_SEMICOLON) {
                 throw_there(p, "expected ';'");
             }
-            LS_VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
+            VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
 
             // loop condition
             const size_t check_instr = p->chunk.size;
@@ -762,7 +757,7 @@ stmt(Parser *p)
             if (expr(p, -1) != STOP_TOK_DO) {
                 throw_there(p, "expected 'do'");
             }
-            LS_VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
+            VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
             swap_chunks(p);
 
             // loop body
@@ -775,7 +770,7 @@ stmt(Parser *p)
             const size_t cont_instr = p->chunk.size;
 
             for (size_t i = old_aux_size; i < p->aux_chunk.size; ++i) {
-                LS_VECTOR_PUSH(p->chunk, p->aux_chunk.data[i]);
+                VECTOR_PUSH(p->chunk, p->aux_chunk.data[i]);
             }
             p->aux_chunk.size = old_aux_size;
 
@@ -837,7 +832,7 @@ stmt(Parser *p)
             }
 
             func_end(p, fu_instr);
-            LS_VECTOR_PUSH(p->chunk, assignment(p, funame.start, funame.size, false));
+            VECTOR_PUSH(p->chunk, assignment(p, funame.start, funame.size, false));
             return end_of_stmt(p);
         }
         break;
@@ -854,7 +849,7 @@ stmt(Parser *p)
             case STOP_TOK_EQ:
             case STOP_TOK_COLON_EQ:
                 {
-                    Instr last = p->chunk.data[p->chunk.size - 1];
+                    Instr last = VECTOR_POP(p->chunk);
                     switch (last.cmd) {
                     case CMD_LOAD:
                         last = assignment(
@@ -872,9 +867,8 @@ stmt(Parser *p)
                     default:
                         throw_there(p, "invalid assignment");
                     }
-                    --p->chunk.size;
                     StopTokenKind s2 = expr(p, -1);
-                    LS_VECTOR_PUSH(p->chunk, last);
+                    VECTOR_PUSH(p->chunk, last);
                     switch (s2) {
                     case STOP_TOK_SEMICOLON:
                     case STOP_TOK_EOF:
@@ -933,8 +927,8 @@ parser_last_error(Parser *p)
 void
 parser_destroy(Parser *p)
 {
-    LS_VECTOR_FREE(p->chunk);
-    LS_VECTOR_FREE(p->aux_chunk);
+    VECTOR_FREE(p->chunk);
+    VECTOR_FREE(p->aux_chunk);
     fixup_stack_free(p->fixup_cond);
     fixup_stack_free(p->fixup_loop_break);
     fixup_stack_free(p->fixup_loop_ctnue);
@@ -942,7 +936,7 @@ parser_destroy(Parser *p)
     for (size_t i = 0; i < p->locals.size; ++i) {
         ht_destroy(p->locals.data[i]);
     }
-    LS_VECTOR_FREE(p->locals);
+    VECTOR_FREE(p->locals);
 
     free(p);
 }

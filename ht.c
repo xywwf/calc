@@ -1,9 +1,5 @@
 #include "ht.h"
-
-#include <stdint.h>
-
-#include "libls/vector.h"
-#include "libls/string_.h"
+#include "vector.h"
 
 typedef uint_least32_t UIndex;
 
@@ -16,8 +12,8 @@ typedef struct {
 struct Ht {
     unsigned char rank;
     UIndex *buckets; /* nbuckets = 1 << rank */
-    LS_VECTOR_OF(Entry) entries;
-    LSString keys;
+    VECTOR_OF(Entry) entries;
+    CharVector keys;
 };
 
 static inline
@@ -42,12 +38,12 @@ get_hash(const char *key, size_t nkey)
 Ht *
 ht_new(unsigned char rank)
 {
-    Ht *h = LS_XNEW(Ht, 1);
+    Ht *h = XNEW(Ht, 1);
     *h = (Ht) {
         .rank = rank,
-        .buckets = LS_XNEW(UIndex, zu_scalbn(1, rank)),
-        .entries = LS_VECTOR_NEW(),
-        .keys = LS_VECTOR_NEW(),
+        .buckets = XNEW(UIndex, zu_scalbn(1, rank)),
+        .entries = VECTOR_NEW(),
+        .keys = VECTOR_NEW(),
     };
     memset(h->buckets, (unsigned char) -1, zu_scalbn(sizeof(UIndex), rank));
     return h;
@@ -66,7 +62,7 @@ grow_if_needed(Ht *h)
     const unsigned char rank = ++h->rank;
     const UIndex nbuckets = zu_scalbn(1, rank);
     const UIndex mask = nbuckets - 1;
-    UIndex *buckets = h->buckets = ls_xrealloc(h->buckets, nbuckets, sizeof(UIndex));
+    UIndex *buckets = h->buckets = xrealloc(h->buckets, nbuckets, sizeof(UIndex));
     memset(buckets, (unsigned char) -1, zu_scalbn(sizeof(UIndex), rank));
 
     Entry *entries = h->entries.data;
@@ -90,8 +86,8 @@ UIndex
 new_entry(Ht *h, const char *key, size_t nkey, HtValue value)
 {
     const UIndex prev_sz = h->keys.size;
-    ls_string_append_b(&h->keys, key, nkey);
-    LS_VECTOR_PUSH(h->entries, ((Entry) {
+    char_vector_append(&h->keys, key, nkey);
+    VECTOR_PUSH(h->entries, ((Entry) {
         .key_idx = prev_sz,
         .nkey = nkey,
         .value = value,
@@ -164,7 +160,7 @@ void
 ht_destroy(Ht *h)
 {
     free(h->buckets);
-    LS_VECTOR_FREE(h->entries);
-    LS_VECTOR_FREE(h->keys);
+    VECTOR_FREE(h->entries);
+    VECTOR_FREE(h->keys);
     free(h);
 }
