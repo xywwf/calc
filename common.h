@@ -18,9 +18,9 @@
 #   define ATTR_PRINTF(N_, M_) __attribute__((format(printf, N_, M_)))
 #   define UNREACHABLE()       __builtin_unreachable()
 #else
-#   define ATTR_UNUSED
-#   define ATTR_NORETURN
-#   define ATTR_PRINTF(N_, M_)
+#   define ATTR_UNUSED         /*nothing*/
+#   define ATTR_NORETURN       /*nothing*/
+#   define ATTR_PRINTF(N_, M_) /*nothing*/
 #   define UNREACHABLE()       abort()
 #endif
 

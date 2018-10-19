@@ -12,8 +12,8 @@ typedef struct {
 } Callsite;
 
 struct Env {
-    VECTOR_OF(Value) gs;
-    Ht *gt;
+    VECTOR_OF(Value) gs;    // globals storage
+    Ht *gt;                 // globals table
     jmp_buf err_handler;
     char err[1024];
     void *userdata;
@@ -153,7 +153,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
 
         case CMD_STORE:
             {
-                Value value = stack.data[--stack.size];
+                Value value = VECTOR_POP(stack);
                 const HtValue res = ht_put(e->gt, in.args.str.start, in.args.str.size, e->gs.size);
                 if (res == e->gs.size) {
                     VECTOR_PUSH(e->gs, value);
@@ -169,7 +169,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 const size_t prev_pos = callstack.data[callstack.size - 1].stackpos;
                 const size_t index = prev_pos + in.args.index;
                 value_unref(stack.data[index]);
-                stack.data[index] = stack.data[--stack.size];
+                stack.data[index] = VECTOR_POP(stack);
             }
             break;
 
@@ -363,9 +363,8 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
             // fall through
         case CMD_RETURN:
             {
-                Callsite prev = callstack.data[--callstack.size];
-
-                Value result = stack.data[--stack.size];
+                Callsite prev = VECTOR_POP(callstack);
+                Value result = VECTOR_POP(stack.data);
 
                 for (size_t i = prev.stackpos - 1; i < stack.size; ++i) {
                     value_unref(stack.data[i]);
