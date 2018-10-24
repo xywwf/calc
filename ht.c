@@ -1,7 +1,7 @@
 #include "ht.h"
 #include "vector.h"
 
-typedef uint_least32_t UIndex;
+typedef uint32_t UIndex;
 
 typedef struct {
     UIndex key_idx;
@@ -24,13 +24,14 @@ zu_scalbn(size_t a, unsigned char b)
 }
 
 static
-UIndex
+uint32_t
 get_hash(const char *key, size_t nkey)
 {
-    // DJBX33A
-    UIndex ret = 5381;
+    // 32-bit FNV-1a
+    uint32_t ret = 2166136261u;
     for (size_t i = 0; i < nkey; ++i) {
-        ret = ret * 33 + (unsigned char) key[i];
+        ret ^= (unsigned char) key[i];
+        ret *= 16777619;
     }
     return ret;
 }
