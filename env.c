@@ -364,7 +364,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
         case CMD_RETURN:
             {
                 Callsite prev = VECTOR_POP(callstack);
-                Value result = VECTOR_POP(stack.data);
+                Value result = VECTOR_POP(stack);
 
                 for (size_t i = prev.stackpos - 1; i < stack.size; ++i) {
                     value_unref(stack.data[i]);
