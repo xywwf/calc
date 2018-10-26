@@ -72,38 +72,40 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
     VECTOR_OF(Value) stack = VECTOR_NEW();
     VECTOR_OF(Callsite) callstack = VECTOR_NEW();
 
-    Instr const *volatile ip;
-    Value       *volatile data1;
-    size_t       volatile size1;
-    Callsite    *volatile data2;
-    size_t       volatile size2;
+    struct {
+        Instr const *volatile ip;
+        Value       *volatile stack_data;
+        size_t       volatile stack_size;
+        Callsite    *volatile callstack_data;
+        size_t       volatile callstack_size;
+    } flushed;
 
 #define FLUSH() \
     do { \
-        ip    = site; \
-        data1 = stack.data; \
-        size1 = stack.size; \
-        data2 = callstack.data; \
-        size2 = callstack.size; \
-    } while (0)
-
-#define DONE() \
-    do { \
-        FLUSH(); \
-        goto do_not_goto_me; /* this is OK: the "implementation" is allowed to goto this label */ \
+        flushed.ip             = site; \
+        flushed.stack_data     = stack.data; \
+        flushed.stack_size     = stack.size; \
+        flushed.callstack_data = callstack.data; \
+        flushed.callstack_size = callstack.size; \
     } while (0)
 
     if (setjmp(e->err_handler) != 0) {
-        goto do_not_goto_me; // this is OK: the "implementation" is allowed to goto this label
+        goto stop;
     }
+
+#define DONE() \
+    do { \
+        ok = true; \
+        FLUSH(); \
+        goto stop; \
+    } while (0)
 
 #define ERR(...) \
     do { \
         snprintf(e->err, sizeof(e->err), __VA_ARGS__); \
-        DONE(); \
+        FLUSH(); \
+        goto stop; \
     } while (0)
-
-#define PROTECT FLUSH
 
     for (const Instr *site = chunk; ;) {
         Instr in = *site;
@@ -187,7 +189,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 Matrix *mat = AS_MAT(container);
 
                 // <danger>
-                PROTECT();
+                FLUSH();
                 Value result = nindices == 1
                     ? matrix_get1(e, mat, ptr[1])
                     : matrix_get2(e, mat, ptr[1], ptr[2]);
@@ -215,7 +217,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 Matrix *mat = AS_MAT(container);
 
                 // <danger>
-                PROTECT();
+                FLUSH();
                 if (nindices == 1) {
                     matrix_set1(e, mat, ptr[1], ptr[2]);
                 } else {
@@ -235,7 +237,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 Value v = stack.data[stack.size - 1];
 
                 // <danger>
-                PROTECT();
+                FLUSH();
                 stack.data[stack.size - 1] = in.args.unary(e, v);
                 // </danger>
 
@@ -249,7 +251,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 Value w = stack.data[stack.size - 1];
 
                 // <danger>
-                PROTECT();
+                FLUSH();
                 stack.data[stack.size - 2] = in.args.binary(e, v, w);
                 // </danger>
 
@@ -267,7 +269,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 case VAL_KIND_CFUNC:
                     {
                         // <danger>
-                        PROTECT();
+                        FLUSH();
                         Value result = AS_CFUNC(func)(e, ptr + 1, in.args.nargs);
                         // </danger>
                         for (size_t i = 0; i < in.args.nargs + 1; ++i) {
@@ -310,7 +312,7 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
                 const size_t nelems = xmul_mat_dims(in.args.dims.height, in.args.dims.width);
 
                 // <danger>
-                PROTECT();
+                FLUSH();
                 Matrix *m = matrix_construct(
                     e,
                     stack.data + stack.size - nelems,
@@ -385,28 +387,34 @@ env_exec(Env *e, const char *src, const Instr *const chunk, size_t nchunk)
         ++site;
     }
 
-do_not_goto_me:
+stop:
     if (ok) {
-        assert(!size1);
-        assert(!size2);
+        assert(!flushed.stack_size);
+        assert(!flushed.callstack_size);
     } else {
         fprintf(stderr, "Error: %s\n", e->err);
-        print_stackframe(ip, data2[size2 - 1].src, true);
 
-        for (size_t i = size2 - 1; i; --i) {
-            print_stackframe(data2[i].site, data2[i - 1].src, false);
+        print_stackframe(
+            flushed.ip,
+            flushed.callstack_data[flushed.callstack_size - 1].src,
+            true);
+
+        for (size_t i = flushed.callstack_size - 1; i; --i) {
+            print_stackframe(
+                flushed.callstack_data[i].site,
+                flushed.callstack_data[i - 1].src,
+                false);
         }
     }
-    for (size_t i = 0; i < size1; ++i) {
-        value_unref(data1[i]);
+    for (size_t i = 0; i < flushed.stack_size; ++i) {
+        value_unref(flushed.stack_data[i]);
     }
-    free(data1);
-    free(data2);
+    free(flushed.stack_data);
+    free(flushed.callstack_data);
     return ok;
 #undef ERR
 #undef DONE
 #undef FLUSH
-#undef PROTECT
 }
 
 void

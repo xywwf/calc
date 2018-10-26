@@ -76,12 +76,21 @@ osdep_rng_new(void)
 bool
 osdep_rng_fill(void *handle, void *buf, size_t nbuf)
 {
-    return read(*(int *) handle, buf, nbuf) == (ssize_t) nbuf;
+    for (size_t nread = 0; nread != nbuf;) {
+        const ssize_t r = read(*(int *) handle, (char *) buf + nread, nbuf - nread);
+        if (r <= 0) {
+            return false;
+        }
+        nread += r;
+    }
+    return true;
 }
 
 void
 osdep_rng_destroy(void *handle)
 {
+    close(*(int *) handle);
     free(handle);
 }
+
 #endif

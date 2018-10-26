@@ -25,7 +25,9 @@ static
 void
 fixup_stack_free(FixupStack fs)
 {
-    fixup_stack_clear(&fs);
+    for (size_t i = 0; i < fs.size; ++i) {
+        VECTOR_FREE(fs.data[i]);
+    }
     VECTOR_FREE(fs);
 }
 
@@ -154,34 +156,43 @@ void
 emit(Parser *p, Lexem pos, Instr in)
 {
     if (pos.line != p->line) {
-        VECTOR_PUSH(p->chunk, ((Instr) {.cmd = CMD_QUARK, .args = {.nline = pos.line}}));
+        VECTOR_PUSH(p->chunk, ((Instr) {CMD_QUARK, {.nline = pos.line}}));
         p->line = pos.line;
     }
     VECTOR_PUSH(p->chunk, in);
 }
 
-#define INSTR(P_, M_, Cmd_, ...) \
-    emit(P_, M_, (Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}})
+static inline
+void
+emit_noquark(Parser *p, Instr in)
+{
+    VECTOR_PUSH(p->chunk, in);
+}
 
-#define INSTR_1(P_, Cmd_, ...) \
-    VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_, .args = {__VA_ARGS__}}))
+static inline
+void
+emit_command_noquark(Parser *p, Command cmd)
+{
+    VECTOR_PUSH(p->chunk, (Instr) {.cmd = cmd});
+}
 
-#define INSTR_1N(P_, Cmd_) \
-    VECTOR_PUSH((P_)->chunk, ((Instr) {.cmd = Cmd_}))
+static inline
+void
+After_expr(Parser *p, Lexem m)
+{
+    if (!p->expr_end) {
+        throw_at(p, m, "expected expression");
+    }
+}
 
-#define AFTER_EXPR(P_, M_) \
-    do { \
-        if (!(P_)->expr_end) { \
-            throw_at(P_, M_, "expected expression"); \
-        } \
-    } while (0)
-
-#define THIS_IS_EXPR(P_, M_) \
-    do { \
-        if ((P_)->expr_end) { \
-            throw_at(P_, M_, "expected operator or end of expression"); \
-        } \
-    } while (0)
+static inline
+void
+This_is_expr(Parser *p, Lexem m)
+{
+    if (p->expr_end) {
+        throw_at(p, m, "expected operator or end of expression");
+    }
+}
 
 static
 Instr
@@ -191,26 +202,15 @@ assignment(Parser *p, const char *name, size_t nname, bool local)
     Ht *h = p->locals.data[p->locals.size - 1];
     if (local) {
         const unsigned index = ht_put(h, name, nname, ht_size(h));
-        return (Instr) {
-            .cmd = CMD_STORE_FAST,
-            .args = {.index = index},
-        };
+        return (Instr) {CMD_STORE_FAST, {.index = index}};
     } else {
         const HtValue val = ht_get(h, name, nname);
         if (val != HT_NO_VALUE) {
-            return (Instr) {
-                .cmd = CMD_STORE_FAST,
-                .args = {.index = val},
-            };
+            return (Instr) {CMD_STORE_FAST, {.index = val}};
+        } else {
+            return (Instr) {CMD_STORE, {.str = {name, nname}}};
         }
     }
-    return (Instr) {
-        .cmd = CMD_STORE,
-        .args = {.str = {
-            .start = name,
-            .size = nname,
-        }},
-    };
 }
 
 static
@@ -231,10 +231,7 @@ bind_vars(Parser *p)
         }
         const HtValue val = ht_get(h, in.args.str.start, in.args.str.size);
         if (val != HT_NO_VALUE) {
-            p->chunk.data[i] = (Instr) {
-                .cmd = CMD_LOAD_FAST,
-                .args = {.index = val},
-            };
+            p->chunk.data[i] = (Instr) {CMD_LOAD_FAST, {.index = val}};
         }
     }
 
@@ -277,7 +274,7 @@ func_begin(Parser *p)
     Ht *h = ht_new(2);
     VECTOR_PUSH(p->locals, h);
 
-    INSTR_1N(p, CMD_FUNCTION);
+    emit_command_noquark(p, CMD_FUNCTION);
     return p->chunk.size - 1;
 }
 
@@ -291,7 +288,7 @@ func_end(Parser *p, size_t fu_instr)
     const size_t nlocalstbl = ht_size(h);
     ht_destroy(h);
 
-    INSTR_1N(p, CMD_EXIT);
+    emit_command_noquark(p, CMD_EXIT);
 
     Instr *fu = &p->chunk.data[fu_instr];
     fu->args.func.offset = p->chunk.size - fu_instr;
@@ -350,28 +347,28 @@ expr(Parser *p, int min_priority)
 
         case LEX_KIND_NUM:
             {
-                THIS_IS_EXPR(p, m);
+                This_is_expr(p, m);
                 Scalar scalar;
                 if (!scalar_parse(m.start, m.size, &scalar)) {
                     throw_at(p, m, "invalid number");
                 }
-                INSTR(p, m, CMD_LOAD_SCALAR, .scalar = scalar);
+                emit(p, m, (Instr) {CMD_LOAD_SCALAR, {.scalar = scalar}});
                 p->expr_end = true;
             }
             break;
 
         case LEX_KIND_STR:
             {
-                THIS_IS_EXPR(p, m);
-                INSTR(p, m, CMD_LOAD_STR, .str = {.start = m.start, .size = m.size});
+                This_is_expr(p, m);
+                emit(p, m, (Instr) {CMD_LOAD_STR, {.str = {m.start, m.size}}});
                 p->expr_end = true;
             }
             break;
 
         case LEX_KIND_IDENT:
             {
-                THIS_IS_EXPR(p, m);
-                INSTR(p, m, CMD_LOAD, .str = {.start = m.start, .size = m.size});
+                This_is_expr(p, m);
+                emit(p, m, (Instr) {CMD_LOAD, {.str = {m.start, m.size}}});
                 p->expr_end = true;
             }
             break;
@@ -396,21 +393,21 @@ expr(Parser *p, int min_priority)
 
                 if (op->arity == 1) {
                     if (op->assoc == OP_ASSOC_LEFT) {
-                        AFTER_EXPR(p, m);
-                        INSTR(p, m, CMD_OP_UNARY, .unary = op->exec.unary);
+                        After_expr(p, m);
+                        emit(p, m, (Instr) {CMD_OP_UNARY, {.unary = op->exec.unary}});
                     } else {
-                        THIS_IS_EXPR(p, m);
+                        This_is_expr(p, m);
                         StopTokenKind s = expr(p, op->priority);
-                        INSTR(p, m, CMD_OP_UNARY, .unary = op->exec.unary);
+                        emit(p, m, (Instr) {CMD_OP_UNARY, {.unary = op->exec.unary}});
                         if (s != STOP_TOK_OP) {
                             return s;
                         }
                     }
                 } else {
-                    AFTER_EXPR(p, m);
+                    After_expr(p, m);
                     p->expr_end = false;
                     StopTokenKind s = expr(p, op->priority + (op->assoc == OP_ASSOC_LEFT));
-                    INSTR(p, m, CMD_OP_BINARY, .binary = op->exec.binary);
+                    emit(p, m, (Instr) {CMD_OP_BINARY, {.binary = op->exec.binary}});
                     if (s != STOP_TOK_OP) {
                         return s;
                     }
@@ -440,7 +437,7 @@ expr(Parser *p, int min_priority)
                         }
                     }
                 }
-                INSTR(p, m, CMD_CALL, .nargs = nargs);
+                emit(p, m, (Instr) {CMD_CALL, {.nargs = nargs}});
             } else {
                 // grouping
                 if (expr(p, -1) != STOP_TOK_RBRACE) {
@@ -464,7 +461,7 @@ expr(Parser *p, int min_priority)
                         throw_there(p, "expected either ',' or ']'");
                     }
                 }
-                INSTR(p, m, CMD_LOAD_AT, .nindices = nindices);
+                emit(p, m, (Instr) {CMD_LOAD_AT, {.nindices = nindices}});
             } else {
                 // matrix
                 unsigned width;
@@ -486,29 +483,29 @@ expr(Parser *p, int min_priority)
                         }
                     }
                 }
-                INSTR(p, m, CMD_MATRIX, .dims = {.height = height, .width = width});
+                emit(p, m, (Instr) {CMD_MATRIX, {.dims = {.height = height, .width = width}}});
             }
             break;
 
         case LEX_KIND_EOF:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             return STOP_TOK_EOF;
 
         case LEX_KIND_RBRACE:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             return STOP_TOK_RBRACE;
 
         case LEX_KIND_RBRACKET:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             return STOP_TOK_RBRACKET;
 
         case LEX_KIND_COMMA:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             p->expr_end = false;
             return STOP_TOK_COMMA;
 
         case LEX_KIND_SEMICOLON:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             p->expr_end = false;
             return STOP_TOK_SEMICOLON;
 
@@ -517,22 +514,22 @@ expr(Parser *p, int min_priority)
             break;
 
         case LEX_KIND_EQ:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             p->expr_end = false;
             return STOP_TOK_EQ;
 
         case LEX_KIND_COLON_EQ:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             p->expr_end = false;
             return STOP_TOK_COLON_EQ;
 
         case LEX_KIND_THEN:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             p->expr_end = false;
             return STOP_TOK_THEN;
 
         case LEX_KIND_DO:
-            AFTER_EXPR(p, m);
+            After_expr(p, m);
             p->expr_end = false;
             return STOP_TOK_DO;
 
@@ -604,7 +601,7 @@ stmt(Parser *p)
                 throw_at(p, m, "'break' outside of a cycle");
             }
             fixup_stack_last_push(&p->fixup_loop_break, p->chunk.size);
-            INSTR_1N(p, CMD_JUMP);
+            emit_command_noquark(p, CMD_JUMP);
             return end_of_stmt(p);
         }
         break;
@@ -615,7 +612,7 @@ stmt(Parser *p)
                 throw_at(p, m, "'continue' outside of a cycle");
             }
             fixup_stack_last_push(&p->fixup_loop_ctnue, p->chunk.size);
-            INSTR_1N(p, CMD_JUMP);
+            emit_command_noquark(p, CMD_JUMP);
             return end_of_stmt(p);
         }
         break;
@@ -629,7 +626,7 @@ stmt(Parser *p)
             VECTOR_PUSH(p->fixup_cond, (FixupList) VECTOR_NEW());
 
             size_t prev_jump_unless = p->chunk.size;
-            INSTR_1N(p, CMD_JUMP_UNLESS);
+            emit_command_noquark(p, CMD_JUMP_UNLESS);
 
             bool else_seen = false;
             while (1) {
@@ -644,7 +641,7 @@ stmt(Parser *p)
                     }
 
                     fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
-                    INSTR_1N(p, CMD_JUMP);
+                    emit_command_noquark(p, CMD_JUMP);
 
                     p->chunk.data[prev_jump_unless].args.offset = p->chunk.size - prev_jump_unless;
 
@@ -652,7 +649,7 @@ stmt(Parser *p)
                         throw_there(p, "expected 'then'");
                     }
                     prev_jump_unless = p->chunk.size;
-                    INSTR_1N(p, CMD_JUMP_UNLESS);
+                    emit_command_noquark(p, CMD_JUMP_UNLESS);
 
                 } else if (s == STOP_TOK_ELSE) {
                     if (else_seen) {
@@ -660,7 +657,7 @@ stmt(Parser *p)
                     }
 
                     fixup_stack_last_push(&p->fixup_cond, p->chunk.size);
-                    INSTR_1N(p, CMD_JUMP);
+                    emit_command_noquark(p, CMD_JUMP);
 
                     p->chunk.data[prev_jump_unless].args.offset = p->chunk.size - prev_jump_unless;
 
@@ -698,7 +695,7 @@ stmt(Parser *p)
             }
 
             const size_t jump_instr = p->chunk.size;
-            INSTR_1N(p, CMD_JUMP_UNLESS);
+            emit_command_noquark(p, CMD_JUMP_UNLESS);
 
             StopTokenKind s;
             while ((s = stmt(p)) == STOP_TOK_SEMICOLON) {}
@@ -706,7 +703,10 @@ stmt(Parser *p)
                 throw_there(p, "expected 'end'");
             }
 
-            INSTR_1(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
+            emit_noquark(p, (Instr) {
+                CMD_JUMP,
+                {.offset = (ssize_t) check_instr - p->chunk.size + 1}
+            });
 
             const size_t end_pos = p->chunk.size;
             p->chunk.data[jump_instr].args.offset = end_pos - jump_instr;
@@ -739,7 +739,7 @@ stmt(Parser *p)
             if (expr(p, -1) != STOP_TOK_SEMICOLON) {
                 throw_there(p, "expected ';'");
             }
-            VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
+            emit_noquark(p, assignment(p, var.start, var.size, true));
 
             // loop condition
             const size_t check_instr = p->chunk.size;
@@ -748,7 +748,7 @@ stmt(Parser *p)
             }
 
             const size_t jump_instr = p->chunk.size;
-            INSTR_1N(p, CMD_JUMP_UNLESS);
+            emit_command_noquark(p, CMD_JUMP_UNLESS);
 
             // assignment
             p->line = 0;
@@ -757,7 +757,7 @@ stmt(Parser *p)
             if (expr(p, -1) != STOP_TOK_DO) {
                 throw_there(p, "expected 'do'");
             }
-            VECTOR_PUSH(p->chunk, assignment(p, var.start, var.size, true));
+            emit_noquark(p, assignment(p, var.start, var.size, true));
             swap_chunks(p);
 
             // loop body
@@ -769,12 +769,16 @@ stmt(Parser *p)
 
             const size_t cont_instr = p->chunk.size;
 
+            // TODO more efficient implementation
             for (size_t i = old_aux_size; i < p->aux_chunk.size; ++i) {
                 VECTOR_PUSH(p->chunk, p->aux_chunk.data[i]);
             }
             p->aux_chunk.size = old_aux_size;
 
-            INSTR_1(p, CMD_JUMP, .offset = (ssize_t) check_instr - p->chunk.size + 1);
+            emit_noquark(p, (Instr) {
+                CMD_JUMP,
+                {.offset = (ssize_t) check_instr - p->chunk.size + 1}
+            });
 
             const size_t end_pos = p->chunk.size;
             p->chunk.data[jump_instr].args.offset = end_pos - jump_instr;
@@ -791,7 +795,7 @@ stmt(Parser *p)
 
     case LEX_KIND_EXIT:
         {
-            INSTR_1N(p, CMD_EXIT);
+            emit_command_noquark(p, CMD_EXIT);
             return end_of_stmt(p);
         }
         break;
@@ -799,7 +803,7 @@ stmt(Parser *p)
     case LEX_KIND_RETURN:
         {
             StopTokenKind s = expr(p, -1);
-            INSTR_1N(p, CMD_RETURN);
+            emit_command_noquark(p, CMD_RETURN);
             switch (s) {
             case STOP_TOK_SEMICOLON:
                 return STOP_TOK_SEMICOLON;
@@ -832,7 +836,7 @@ stmt(Parser *p)
             }
 
             func_end(p, fu_instr);
-            VECTOR_PUSH(p->chunk, assignment(p, funame.start, funame.size, false));
+            emit_noquark(p, assignment(p, funame.start, funame.size, false));
             return end_of_stmt(p);
         }
         break;
@@ -844,7 +848,7 @@ stmt(Parser *p)
             switch (s) {
             case STOP_TOK_SEMICOLON:
             case STOP_TOK_EOF:
-                INSTR_1N(p, CMD_PRINT);
+                emit_command_noquark(p, CMD_PRINT);
                 return s;
             case STOP_TOK_EQ:
             case STOP_TOK_COLON_EQ:
@@ -868,7 +872,7 @@ stmt(Parser *p)
                         throw_there(p, "invalid assignment");
                     }
                     StopTokenKind s2 = expr(p, -1);
-                    VECTOR_PUSH(p->chunk, last);
+                    emit_noquark(p, last);
                     switch (s2) {
                     case STOP_TOK_SEMICOLON:
                     case STOP_TOK_EOF:
@@ -896,17 +900,17 @@ parser_parse(Parser *p)
 
     const size_t fu_instr = func_begin(p);
 
-    StopTokenKind s2;
-    while ((s2 = stmt(p)) == STOP_TOK_SEMICOLON) {}
-    if (s2 != STOP_TOK_EOF) {
+    StopTokenKind s;
+    while ((s = stmt(p)) == STOP_TOK_SEMICOLON) {}
+    if (s != STOP_TOK_EOF) {
         throw_there(p, "syntax error");
     }
 
     func_end(p, fu_instr);
 
-    INSTR_1N(p, CMD_CALL);
-    INSTR_1N(p, CMD_PRINT);
-    INSTR_1N(p, CMD_EXIT);
+    emit_command_noquark(p, CMD_CALL);
+    emit_command_noquark(p, CMD_PRINT);
+    emit_command_noquark(p, CMD_EXIT);
 
     return true;
 }
